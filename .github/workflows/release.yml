@@ -21,7 +21,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -40,7 +40,6 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest
             type=sha,prefix=sha-,format=short
 
       - name: Build and push Docker image
@@ -50,3 +49,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Pin docker-compose.yml to new image tag
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          sed -i "s|image: ghcr.io/cori/fpv-inventory:.*|image: ghcr.io/cori/fpv-inventory:sha-${SHORT_SHA}|" docker-compose.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.yml
+          git diff --staged --quiet || git commit -m "chore: pin docker-compose to sha-${SHORT_SHA} [skip ci]"
+          git push
