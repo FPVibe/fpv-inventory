@@ -25,3 +25,7 @@ node_modules/
 
 # Val.town local config
 .val/
+
+# App data (SQLite db and uploaded photos)
+*.db
+photos/
