@@ -414,9 +414,15 @@ export function makeHandler(db: DB) {
       const status = (form.get("status")?.toString() ?? "unused") as PartStatus;
       const notes = form.get("notes")?.toString().trim() || undefined;
       const parentIdStr = form.get("parent_id")?.toString();
-      const parent_id = parentIdStr ? parseInt(parentIdStr, 10) : null;
+      const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
+      const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
 
-      createPart(db, { name, quantity, status, notes, parent_id });
+      try {
+        createPart(db, { name, quantity, status, notes, parent_id });
+      } catch (err) {
+        console.error("Failed to create part:", err);
+        return new Response("Failed to create part", { status: 500 });
+      }
 
       const redirect = parent_id != null ? `/parts/${parent_id}` : "/";
       return new Response(null, { status: 303, headers: { Location: redirect } });
@@ -442,7 +448,12 @@ export function makeHandler(db: DB) {
       const notes = form.get("notes")?.toString();
       const quantityStr = form.get("quantity")?.toString();
       const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
-      updatePart(db, id, { status, notes, quantity });
+      try {
+        updatePart(db, id, { status, notes, quantity });
+      } catch (err) {
+        console.error("Failed to update part:", err);
+        return new Response("Failed to update part", { status: 500 });
+      }
       return new Response(null, { status: 303, headers: { Location: `/parts/${id}` } });
     }
 
@@ -456,7 +467,12 @@ export function makeHandler(db: DB) {
       const newParentIdStr = form.get("new_parent_id")?.toString();
       const newParentId = newParentIdStr ? parseInt(newParentIdStr, 10) : null;
       const notes = form.get("notes")?.toString() || undefined;
-      movePart(db, id, newParentId, notes);
+      try {
+        movePart(db, id, newParentId, notes);
+      } catch (err) {
+        console.error("Failed to move part:", err);
+        return new Response("Failed to move part", { status: 500 });
+      }
       const redirect = newParentId != null ? `/parts/${newParentId}` : "/";
       return new Response(null, { status: 303, headers: { Location: redirect } });
     }
