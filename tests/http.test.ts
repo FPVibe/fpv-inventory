@@ -47,6 +47,17 @@ Deno.test("POST /parts with missing name returns 400", async () => {
   assertEquals(res.status, 400);
 });
 
+Deno.test("POST /parts with invalid parent_id treats it as top-level", async () => {
+  const { handler } = makeApp();
+  const form = new FormData();
+  form.append("name", "Quad Beta");
+  form.append("parent_id", "not-a-number");
+  const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
+  assertEquals(res.status, 303);
+  assertEquals(res.headers.get("Location"), "/");
+});
+
+
 Deno.test("POST /parts supports optional parent_id", async () => {
   const { db, handler } = makeApp();
   const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
