@@ -28,7 +28,7 @@ Deno.test("GET / lists top-level parts", async () => {
 
 // ─── Quick-add (POST /parts) ──────────────────────────────────────────────────
 
-Deno.test("POST /parts creates a part and redirects", async () => {
+Deno.test("POST /parts creates a part and redirects to homepage", async () => {
   const { handler } = makeApp();
   const form = new FormData();
   form.append("name", "0702 Motor");
@@ -36,7 +36,20 @@ Deno.test("POST /parts creates a part and redirects", async () => {
   form.append("status", "unused");
   const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
   assertEquals(res.status, 303);
-  assertStringIncludes(res.headers.get("Location") ?? "", "/");
+  assertEquals(res.headers.get("Location"), "/");
+});
+
+Deno.test("POST /parts then GET / shows the new part", async () => {
+  const { handler } = makeApp();
+  const form = new FormData();
+  form.append("name", "Runcam Nano 4");
+  form.append("quantity", "1");
+  form.append("status", "unused");
+  await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
+  const res = await handler(new Request("http://localhost/"));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  assertStringIncludes(html, "Runcam Nano 4");
 });
 
 Deno.test("POST /parts with missing name returns 400", async () => {
@@ -45,6 +58,16 @@ Deno.test("POST /parts with missing name returns 400", async () => {
   form.append("quantity", "1");
   const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
   assertEquals(res.status, 400);
+});
+
+Deno.test("POST /parts with invalid parent_id treats part as top-level", async () => {
+  const { handler } = makeApp();
+  const form = new FormData();
+  form.append("name", "Quad Beta");
+  form.append("parent_id", "not-a-number");
+  const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
+  assertEquals(res.status, 303);
+  assertEquals(res.headers.get("Location"), "/");
 });
 
 Deno.test("POST /parts supports optional parent_id", async () => {
@@ -58,7 +81,7 @@ Deno.test("POST /parts supports optional parent_id", async () => {
   const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
   assertEquals(res.status, 303);
   // Redirect to the parent's detail page
-  assertStringIncludes(res.headers.get("Location") ?? "", `/parts/${quadId}`);
+  assertEquals(res.headers.get("Location"), `/parts/${quadId}`);
 });
 
 // ─── Part detail ──────────────────────────────────────────────────────────────
