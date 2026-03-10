@@ -2,6 +2,7 @@
 
 This repository is a template for building using Claude Code. This guide establishes development best practices.
 
+We'll be working on the repo through GitHub issues; as soon as you've finished reading this file make sure you have the `gh` client installed and that you can access issues. You can install it with `apt-get install -y gh`.
 
 ## Development Philosophy and Methodology
 
@@ -53,6 +54,10 @@ Keep documentation synchronized with code:
 - **Never let docs lag behind code**
 
 ### Technology Choices
+
+#### Infrastructure
+
+Make sure you add github actions for autiomations that make sense: if there's a Dockerfile, make and release a package. since you're building tests make sure you have actions to run the tests on push, &ct
 
 #### ❌ No React
 
