@@ -515,13 +515,44 @@ export function makeHandler(db: DB) {
   };
 }
 
+function withLogging(handler: (req: Request) => Promise<Response>): (req: Request) => Promise<Response> {
+  return async (req: Request) => {
+    const start = Date.now();
+    const { method } = req;
+    const path = new URL(req.url).pathname;
+    try {
+      const res = await handler(req);
+      console.log(`${method} ${path} → ${res.status} (${Date.now() - start}ms)`);
+      return res;
+    } catch (err) {
+      console.error(`${method} ${path} → ERROR`, err);
+      return new Response("Internal Server Error", { status: 500 });
+    }
+  };
+}
+
 // When run directly (not imported), start the server
 if (import.meta.main) {
   const db = initDb(DB_PATH);
-  const handler = makeHandler(db);
   const port = parseInt(Deno.env.get("PORT") ?? "8000", 10);
-  console.log(`FPV Inventory running on http://localhost:${port}`);
-  Deno.serve({ port }, handler);
-}
 
-export default makeHandler(initDb(DB_PATH));
+  const server = Deno.serve(
+    {
+      port,
+      onListen: ({ port, hostname }) => {
+        console.log(`FPV Inventory running on http://${hostname}:${port}`);
+      },
+    },
+    withLogging(makeHandler(db)),
+  );
+
+  const shutdown = async () => {
+    console.log("Shutting down gracefully...");
+    await server.shutdown();
+    db.close();
+    console.log("Shutdown complete.");
+  };
+
+  Deno.addSignalListener("SIGTERM", shutdown);
+  Deno.addSignalListener("SIGINT", shutdown);
+}
