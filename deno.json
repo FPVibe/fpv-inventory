@@ -1,4 +1,5 @@
 {
+  "vendor": true,
   "tasks": {
     "test": "deno test --allow-all",
     "test:watch": "deno test --allow-all --watch",
