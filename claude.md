@@ -3,6 +3,16 @@
 This repository is a template for building using Claude Code. This guide establishes development best practices.
 
 
+## Collaboration
+
+We collaborate through GitHub issues and pull requests. Make sure the `gh` tool is installed and use it with the token in your `env`.
+
+```bash
+apt install gh -y
+```
+
+**Always use a branch + PR workflow** — never push or commit directly to `main`. Use `gh pr create` to open a PR for review. Do not use the local git proxy; use `gh` with the token in env for all GitHub operations.
+
 ## Development Philosophy and Methodology
 
 ### Red-Green-Refactor (TDD)
