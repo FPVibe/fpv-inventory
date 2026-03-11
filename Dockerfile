@@ -2,13 +2,11 @@ FROM denoland/deno:2.2.1
 
 WORKDIR /app
 
-# Copy source files
+# Copy source files and vendored dependencies
 COPY deno.json .
 COPY main.ts .
 COPY db.ts .
-
-# Pre-cache dependencies
-RUN deno cache main.ts
+COPY vendor/ vendor/
 
 # Create data directories
 RUN mkdir -p /data/photos
