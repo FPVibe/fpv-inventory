@@ -9,6 +9,7 @@ import {
   getPartHistory,
   type Part,
   type PartStatus,
+  type PartType,
 } from "./db.ts";
 
 const PHOTOS_DIR = Deno.env.get("PHOTOS_DIR") ?? "./photos";
@@ -30,6 +31,19 @@ const STATUS_COLORS: Record<PartStatus, string> = {
   "lost": "#fd7e14",
 };
 
+const TYPE_LABELS: Record<PartType, string> = {
+  "motor": "Motor",
+  "fc": "FC",
+  "esc": "ESC",
+  "vtx": "VTX",
+  "frame": "Frame",
+  "camera": "Camera",
+  "antenna": "Antenna",
+  "battery": "Battery",
+  "craft": "Craft",
+  "other": "Other",
+};
+
 function html(strings: TemplateStringsArray, ...values: unknown[]): string {
   return strings.reduce((acc, str, i) => acc + str + (i < values.length ? String(values[i]) : ""), "");
 }
@@ -46,6 +60,19 @@ function statusBadge(status: PartStatus): string {
   const color = STATUS_COLORS[status] ?? "#6c757d";
   const label = STATUS_LABELS[status] ?? status;
   return `<span class="badge" style="background:${color}">${escape(label)}</span>`;
+}
+
+function typeBadge(type: PartType | null): string {
+  if (!type) return "";
+  const label = TYPE_LABELS[type] ?? type;
+  return `<span class="type-badge">${escape(label)}</span>`;
+}
+
+const ALL_TYPES = ["motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "other"] as PartType[];
+
+function typeOptions(selected: PartType | null): string {
+  return `<option value="">— any type —</option>` +
+    ALL_TYPES.map((t) => `<option value="${t}"${t === selected ? " selected" : ""}>${TYPE_LABELS[t]}</option>`).join("");
 }
 
 function layout(title: string, body: string): string {
@@ -156,6 +183,7 @@ function layout(title: string, body: string): string {
     .detail-field { margin-bottom: 8px; font-size: .9rem; }
     .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
     .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
+    .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
   </style>
 </head>
 <body>
@@ -188,6 +216,13 @@ function quickAddForm(parentId?: number): string {
         <input name="quantity" type="number" value="1" min="1" style="max-width:80px">
       </div>
       <div class="field">
+        <label>Type</label>
+        <select name="type">
+          <option value="">—</option>
+          ${ALL_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field">
         <label>Status</label>
         <select name="status">
           <option value="unused">Unused</option>
@@ -216,21 +251,33 @@ function partRow(part: Part): string {
   <span class="part-name">
     <a href="/parts/${part.id}">${escape(part.name)}</a>
     ${qty}
+    ${typeBadge(part.type)}
     ${notes}
   </span>
   ${statusBadge(part.status)}
 </div>`;
 }
 
-function homePage(db: DB): string {
-  const parts = listParts(db, null);
+function homePage(db: DB, typeFilter?: PartType): string {
+  const parts = listParts(db, null, typeFilter);
   const rows = parts.length > 0
     ? parts.map(partRow).join("")
     : `<p class="empty">No parts yet — add something above.</p>`;
+
+  const filterBar = `
+<form method="GET" action="/" style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <label style="margin:0;color:#8b949e;font-size:.875rem">Filter by type:</label>
+  <select name="type" onchange="this.form.submit()" style="width:auto">
+    ${typeOptions(typeFilter ?? null)}
+  </select>
+  ${typeFilter ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
+</form>`;
+
   return layout("Inventory", `
     ${quickAddForm()}
     <div class="card">
       <h2>Parts &amp; Assemblies</h2>
+      ${filterBar}
       ${rows}
     </div>
   `);
@@ -319,6 +366,10 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           ${statusBadge(part.status)}
         </div>
         <div class="detail-field">
+          <span class="label">Type</span>
+          ${part.type ? typeBadge(part.type) : '<span style="color:#8b949e">—</span>'}
+        </div>
+        <div class="detail-field">
           <span class="label">Quantity</span>
           ${escape(part.quantity)}
         </div>
@@ -333,6 +384,12 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
               ${(["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
                 .map((s) => `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`)
                 .join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select name="type">
+              ${typeOptions(part.type)}
             </select>
           </div>
           <div class="field">
@@ -398,7 +455,8 @@ export function makeHandler(db: DB) {
 
     // GET /
     if (path === "/" && req.method === "GET") {
-      return new Response(homePage(db), {
+      const typeParam = url.searchParams.get("type") as PartType | null;
+      return new Response(homePage(db, typeParam ?? undefined), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -412,13 +470,15 @@ export function makeHandler(db: DB) {
       }
       const quantity = parseInt(form.get("quantity")?.toString() ?? "1", 10) || 1;
       const status = (form.get("status")?.toString() ?? "unused") as PartStatus;
+      const typeStr = form.get("type")?.toString() || undefined;
+      const type = typeStr ? typeStr as PartType : undefined;
       const notes = form.get("notes")?.toString().trim() || undefined;
       const parentIdStr = form.get("parent_id")?.toString();
       const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
       const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
 
       try {
-        createPart(db, { name, quantity, status, notes, parent_id });
+        createPart(db, { name, quantity, status, type, notes, parent_id });
       } catch (err) {
         console.error("Failed to create part:", err);
         return new Response("Failed to create part", { status: 500 });
@@ -445,11 +505,13 @@ export function makeHandler(db: DB) {
       if (!part) return new Response("Not Found", { status: 404 });
       const form = await req.formData();
       const status = form.get("status")?.toString() as PartStatus | undefined;
+      const typeStr = form.get("type")?.toString();
+      const type = typeStr !== undefined ? (typeStr || null) as PartType | null : undefined;
       const notes = form.get("notes")?.toString();
       const quantityStr = form.get("quantity")?.toString();
       const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
       try {
-        updatePart(db, id, { status, notes, quantity });
+        updatePart(db, id, { status, type, notes, quantity });
       } catch (err) {
         console.error("Failed to update part:", err);
         return new Response("Failed to update part", { status: 500 });
