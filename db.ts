@@ -1,11 +1,13 @@
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 
 export type PartStatus = "unused" | "in-use" | "broken" | "retired" | "lost";
+export type PartType = "motor" | "fc" | "esc" | "vtx" | "frame" | "camera" | "antenna" | "battery" | "craft" | "other";
 
 export interface Part {
   id: number;
   name: string;
   status: PartStatus;
+  type: PartType | null;
   notes: string | null;
   quantity: number;
   parent_id: number | null;
@@ -31,6 +33,7 @@ export interface CreatePartInput {
   name: string;
   quantity: number;
   status: PartStatus;
+  type?: PartType | null;
   notes?: string;
   parent_id?: number | null;
 }
@@ -38,6 +41,7 @@ export interface CreatePartInput {
 export interface UpdatePartInput {
   name?: string;
   status?: PartStatus;
+  type?: PartType | null;
   notes?: string;
   quantity?: number;
   photo_path?: string;
@@ -50,6 +54,7 @@ export function initDb(path: string): DB {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'unused',
+      type TEXT,
       notes TEXT,
       quantity INTEGER NOT NULL DEFAULT 1,
       parent_id INTEGER REFERENCES parts(id),
@@ -76,9 +81,9 @@ export function initDb(path: string): DB {
 
 export function createPart(db: DB, input: CreatePartInput): number {
   db.query(
-    `INSERT INTO parts (name, quantity, status, notes, parent_id)
-     VALUES (?, ?, ?, ?, ?)`,
-    [input.name, input.quantity, input.status, input.notes ?? null, input.parent_id ?? null]
+    `INSERT INTO parts (name, quantity, status, type, notes, parent_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [input.name, input.quantity, input.status, input.type ?? null, input.notes ?? null, input.parent_id ?? null]
   );
   const id = db.lastInsertRowId;
   db.query(
@@ -91,41 +96,42 @@ export function createPart(db: DB, input: CreatePartInput): number {
 
 export function getPart(db: DB, id: number): Part | null {
   const rows = db.query<
-    [number, string, string, string | null, number, number | null, string | null, string, string]
+    [number, string, string, string | null, string | null, number, number | null, string | null, string, string]
   >(
-    `SELECT id, name, status, notes, quantity, parent_id, photo_path, created_at, updated_at
+    `SELECT id, name, status, type, notes, quantity, parent_id, photo_path, created_at, updated_at
      FROM parts WHERE id = ?`,
     [id]
   );
   if (rows.length === 0) return null;
-  const [pid, name, status, notes, quantity, parent_id, photo_path, created_at, updated_at] =
+  const [pid, name, status, type, notes, quantity, parent_id, photo_path, created_at, updated_at] =
     rows[0];
-  return { id: pid, name, status: status as PartStatus, notes, quantity, parent_id, photo_path, created_at, updated_at };
+  return { id: pid, name, status: status as PartStatus, type: type as PartType | null, notes, quantity, parent_id, photo_path, created_at, updated_at };
 }
 
-export function listParts(db: DB, parent_id?: number | null): Part[] {
-  let rows: [number, string, string, string | null, number, number | null, string | null, string, string][];
-  if (parent_id === undefined) {
-    rows = db.query(
-      `SELECT id, name, status, notes, quantity, parent_id, photo_path, created_at, updated_at
-       FROM parts ORDER BY name`
-    );
+export function listParts(db: DB, parent_id?: number | null, type?: PartType): Part[] {
+  type Row = [number, string, string, string | null, string | null, number, number | null, string | null, string, string];
+  const select = `SELECT id, name, status, type, notes, quantity, parent_id, photo_path, created_at, updated_at FROM parts`;
+  let rows: Row[];
+
+  if (parent_id === undefined && type === undefined) {
+    rows = db.query(`${select} ORDER BY name`);
+  } else if (parent_id === undefined) {
+    rows = db.query(`${select} WHERE type = ? ORDER BY name`, [type!]);
+  } else if (parent_id === null && type === undefined) {
+    rows = db.query(`${select} WHERE parent_id IS NULL ORDER BY name`);
   } else if (parent_id === null) {
-    rows = db.query(
-      `SELECT id, name, status, notes, quantity, parent_id, photo_path, created_at, updated_at
-       FROM parts WHERE parent_id IS NULL ORDER BY name`
-    );
+    rows = db.query(`${select} WHERE parent_id IS NULL AND type = ? ORDER BY name`, [type!]);
+  } else if (type === undefined) {
+    rows = db.query(`${select} WHERE parent_id = ? ORDER BY name`, [parent_id]);
   } else {
-    rows = db.query(
-      `SELECT id, name, status, notes, quantity, parent_id, photo_path, created_at, updated_at
-       FROM parts WHERE parent_id = ? ORDER BY name`,
-      [parent_id]
-    );
+    rows = db.query(`${select} WHERE parent_id = ? AND type = ? ORDER BY name`, [parent_id, type]);
   }
-  return rows.map(([id, name, status, notes, quantity, parent_id, photo_path, created_at, updated_at]) => ({
+
+  return rows.map(([id, name, status, partType, notes, quantity, parent_id, photo_path, created_at, updated_at]) => ({
     id,
     name,
     status: status as PartStatus,
+    type: partType as PartType | null,
     notes,
     quantity,
     parent_id,
@@ -141,14 +147,15 @@ export function updatePart(db: DB, id: number, input: UpdatePartInput): void {
 
   const name = input.name ?? current.name;
   const status = input.status ?? current.status;
+  const type = "type" in input ? (input.type ?? null) : current.type;
   const notes = "notes" in input ? (input.notes ?? null) : current.notes;
   const quantity = input.quantity ?? current.quantity;
   const photo_path = "photo_path" in input ? (input.photo_path ?? null) : current.photo_path;
 
   db.query(
-    `UPDATE parts SET name=?, status=?, notes=?, quantity=?, photo_path=?, updated_at=datetime('now')
+    `UPDATE parts SET name=?, status=?, type=?, notes=?, quantity=?, photo_path=?, updated_at=datetime('now')
      WHERE id=?`,
-    [name, status, notes, quantity, photo_path, id]
+    [name, status, type, notes, quantity, photo_path, id]
   );
   db.query(
     `INSERT INTO part_history (part_id, action, old_status, new_status, quantity_delta)

@@ -137,3 +137,42 @@ Deno.test("getPartHistory returns events in chronological order", () => {
   assertEquals(history[2].action, "updated");
   db.close();
 });
+
+Deno.test("createPart supports type field", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "2306 Motor", quantity: 4, status: "unused", type: "motor" });
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.type, "motor");
+  db.close();
+});
+
+Deno.test("createPart defaults type to null", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "Mystery Part", quantity: 1, status: "unused" });
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.type, null);
+  db.close();
+});
+
+Deno.test("updatePart can set type", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "Speedybee F405", quantity: 1, status: "unused" });
+  updatePart(db, id, { type: "fc" });
+  const part = getPart(db, id);
+  assertEquals(part!.type, "fc");
+  db.close();
+});
+
+Deno.test("listParts can filter by type", () => {
+  const db = makeTempDb();
+  createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  createPart(db, { name: "Motor B", quantity: 4, status: "unused", type: "motor" });
+  createPart(db, { name: "Frame X", quantity: 1, status: "unused", type: "frame" });
+  createPart(db, { name: "Unknown Part", quantity: 1, status: "unused" });
+  const motors = listParts(db, undefined, "motor");
+  assertEquals(motors.length, 2);
+  assertEquals(motors.every((p) => p.type === "motor"), true);
+  db.close();
+});
