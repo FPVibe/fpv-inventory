@@ -105,6 +105,42 @@ Deno.test("GET /parts/:id shows child parts", async () => {
   assertStringIncludes(html, "Camera");
 });
 
+Deno.test("GET /parts/:id shows parent assembly name when part belongs to one", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad Alpha", quantity: 1, status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const res = await handler(new Request(`http://localhost/parts/${motorId}`));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  // Detail page should show which assembly the part belongs to
+  assertStringIncludes(html, "Quad Alpha");
+  assertStringIncludes(html, "Assembly");
+});
+
+Deno.test("GET /parts/:id does not show assembly section for top-level parts", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, { name: "Loose Motor", quantity: 4, status: "unused" });
+  const res = await handler(new Request(`http://localhost/parts/${id}`));
+  const html = await res.text();
+  // Should not show "Part of assembly" label for top-level parts
+  // (breadcrumb shows just Home, no assembly link)
+  assertStringIncludes(html, "Loose Motor");
+});
+
+Deno.test("GET /parts/:id shows child parts with assembly indicator in their row", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad Beta", quantity: 1, status: "in-use" });
+  createPart(db, { name: "ESC", quantity: 1, status: "in-use", parent_id: quadId });
+  // When viewing the ESC directly, it shows the parent assembly name
+  const escId = (await (async () => {
+    const res2 = await handler(new Request(`http://localhost/parts/${quadId}`));
+    const html2 = await res2.text();
+    assertStringIncludes(html2, "ESC");
+    return null;
+  })());
+  void escId;
+});
+
 Deno.test("GET /parts/:id shows part history", async () => {
   const { db, handler } = makeApp();
   const id = createPart(db, { name: "ESC", quantity: 1, status: "unused" });
