@@ -246,6 +246,10 @@ function fullAddForm(parentId?: number): string {
           <label>Notes</label>
           <textarea name="notes" rows="3" placeholder="e.g. burned in, running on 4S only"></textarea>
         </div>
+        <div class="field">
+          <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+          <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W"></textarea>
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button type="submit" class="btn btn-primary">Save Part</button>
           <a href="${backLink}" class="btn">Cancel</a>
@@ -436,6 +440,7 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           ${escape(part.quantity)}
         </div>
         ${part.notes ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>` : ""}
+        ${part.specs ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${escape(part.specs)}</pre></div>` : ""}
         ${part.parent_id != null ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)}</a></div>` : ""}
 
         <hr style="border-color:#30363d;margin:12px 0">
@@ -462,6 +467,10 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <div class="field">
             <label>Notes</label>
             <textarea name="notes" rows="2">${escape(part.notes ?? "")}</textarea>
+          </div>
+          <div class="field">
+            <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${escape(part.specs ?? "")}</textarea>
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
         </form>
@@ -572,13 +581,14 @@ export function makeHandler(db: DB) {
       const typeStr = form.get("type")?.toString() || undefined;
       const type = typeStr ? typeStr as PartType : undefined;
       const notes = form.get("notes")?.toString().trim() || undefined;
+      const specs = form.get("specs")?.toString().trim() || undefined;
       const parentIdStr = form.get("parent_id")?.toString();
       const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
       const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
 
       let newId: number;
       try {
-        newId = createPart(db, { name, quantity, status, type, notes, parent_id });
+        newId = createPart(db, { name, quantity, status, type, notes, specs, parent_id });
       } catch (err) {
         console.error("Failed to create part:", err);
         return new Response("Failed to create part", { status: 500 });
@@ -606,10 +616,11 @@ export function makeHandler(db: DB) {
       const typeStr = form.get("type")?.toString();
       const type = typeStr !== undefined ? (typeStr || null) as PartType | null : undefined;
       const notes = form.get("notes")?.toString();
+      const specs = form.get("specs")?.toString();
       const quantityStr = form.get("quantity")?.toString();
       const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
       try {
-        updatePart(db, id, { status, type, notes, quantity });
+        updatePart(db, id, { status, type, notes, specs, quantity });
       } catch (err) {
         console.error("Failed to update part:", err);
         return new Response("Failed to update part", { status: 500 });
