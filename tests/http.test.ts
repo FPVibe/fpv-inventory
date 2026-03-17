@@ -192,6 +192,36 @@ Deno.test("GET /parts/999 returns 404", async () => {
   assertEquals(res.status, 404);
 });
 
+// ─── Specs field (HTTP) ───────────────────────────────────────────────────────
+
+Deno.test("GET /parts/:id shows specs when present", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "unused",
+    specs: "KV: 2400\nWeight: 31g",
+  });
+  const res = await handler(new Request(`http://localhost/parts/${id}`));
+  const html = await res.text();
+  assertStringIncludes(html, "KV: 2400");
+  assertStringIncludes(html, "Specs");
+});
+
+Deno.test("POST /parts/:id/update can save specs", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, { name: "Motor", quantity: 1, status: "unused" });
+  const form = new FormData();
+  form.append("status", "unused");
+  form.append("specs", "KV: 2400\nShaft: 3mm");
+  const res = await handler(
+    new Request(`http://localhost/parts/${id}/update`, { method: "POST", body: form })
+  );
+  assertEquals(res.status, 303);
+  const part = db.query<[string | null]>("SELECT specs FROM parts WHERE id=?", [id])[0][0];
+  assertEquals(part, "KV: 2400\nShaft: 3mm");
+});
+
 // ─── Update part (POST /parts/:id/update) ────────────────────────────────────
 
 Deno.test("POST /parts/:id/update changes status and redirects", async () => {
