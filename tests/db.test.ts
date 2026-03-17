@@ -165,6 +165,49 @@ Deno.test("updatePart can set type", () => {
   db.close();
 });
 
+// ─── Specs field ──────────────────────────────────────────────────────────────
+
+Deno.test("createPart supports specs field", () => {
+  const db = makeTempDb();
+  const id = createPart(db, {
+    name: "2306 Motor",
+    quantity: 4,
+    status: "unused",
+    specs: "Motor Size: 2306\nKV: 2400KV\nWeight: 31.5g\nMax Power: 1100W",
+  });
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.specs, "Motor Size: 2306\nKV: 2400KV\nWeight: 31.5g\nMax Power: 1100W");
+  db.close();
+});
+
+Deno.test("createPart defaults specs to null", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "Mystery Part", quantity: 1, status: "unused" });
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.specs, null);
+  db.close();
+});
+
+Deno.test("updatePart can set specs", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "ESC", quantity: 1, status: "unused" });
+  updatePart(db, id, { specs: "Cont. Current: 45A\nBurst: 55A" });
+  const part = getPart(db, id);
+  assertEquals(part!.specs, "Cont. Current: 45A\nBurst: 55A");
+  db.close();
+});
+
+Deno.test("updatePart can clear specs", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "ESC", quantity: 1, status: "unused", specs: "old specs" });
+  updatePart(db, id, { specs: "" });
+  const part = getPart(db, id);
+  assertEquals(part!.specs, null);
+  db.close();
+});
+
 Deno.test("listParts can filter by type", () => {
   const db = makeTempDb();
   createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });

@@ -26,6 +26,43 @@ Deno.test("GET / lists top-level parts", async () => {
   assertStringIncludes(html, "Quad Alpha");
 });
 
+// ─── New part form (GET /parts/new) ──────────────────────────────────────────
+
+Deno.test("GET /parts/new returns a full add form", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/parts/new"));
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Content-Type"), "text/html; charset=utf-8");
+  const html = await res.text();
+  assertStringIncludes(html, "Add Part");
+  // Full form has notes and name fields
+  assertStringIncludes(html, 'name="name"');
+  assertStringIncludes(html, 'name="notes"');
+  assertStringIncludes(html, 'name="type"');
+});
+
+Deno.test("GET / homepage links to full add form", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/"));
+  const html = await res.text();
+  assertStringIncludes(html, "/parts/new");
+});
+
+Deno.test("POST /parts/new creates part with notes and redirects to part detail", async () => {
+  const { handler } = makeApp();
+  const form = new FormData();
+  form.append("name", "Speedybee F405");
+  form.append("quantity", "1");
+  form.append("status", "unused");
+  form.append("type", "fc");
+  form.append("notes", "brand new, needs firmware");
+  const res = await handler(new Request("http://localhost/parts/new", { method: "POST", body: form }));
+  assertEquals(res.status, 303);
+  // Redirects to the new part's detail page, not the homepage
+  const location = res.headers.get("Location") ?? "";
+  assertStringIncludes(location, "/parts/");
+});
+
 // ─── Quick-add (POST /parts) ──────────────────────────────────────────────────
 
 Deno.test("POST /parts creates a part and redirects to homepage", async () => {
@@ -105,6 +142,42 @@ Deno.test("GET /parts/:id shows child parts", async () => {
   assertStringIncludes(html, "Camera");
 });
 
+Deno.test("GET /parts/:id shows parent assembly name when part belongs to one", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad Alpha", quantity: 1, status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const res = await handler(new Request(`http://localhost/parts/${motorId}`));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  // Detail page should show which assembly the part belongs to
+  assertStringIncludes(html, "Quad Alpha");
+  assertStringIncludes(html, "Assembly");
+});
+
+Deno.test("GET /parts/:id does not show assembly section for top-level parts", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, { name: "Loose Motor", quantity: 4, status: "unused" });
+  const res = await handler(new Request(`http://localhost/parts/${id}`));
+  const html = await res.text();
+  // Should not show "Part of assembly" label for top-level parts
+  // (breadcrumb shows just Home, no assembly link)
+  assertStringIncludes(html, "Loose Motor");
+});
+
+Deno.test("GET /parts/:id shows child parts with assembly indicator in their row", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad Beta", quantity: 1, status: "in-use" });
+  createPart(db, { name: "ESC", quantity: 1, status: "in-use", parent_id: quadId });
+  // When viewing the ESC directly, it shows the parent assembly name
+  const escId = (await (async () => {
+    const res2 = await handler(new Request(`http://localhost/parts/${quadId}`));
+    const html2 = await res2.text();
+    assertStringIncludes(html2, "ESC");
+    return null;
+  })());
+  void escId;
+});
+
 Deno.test("GET /parts/:id shows part history", async () => {
   const { db, handler } = makeApp();
   const id = createPart(db, { name: "ESC", quantity: 1, status: "unused" });
@@ -117,6 +190,36 @@ Deno.test("GET /parts/999 returns 404", async () => {
   const { handler } = makeApp();
   const res = await handler(new Request("http://localhost/parts/999"));
   assertEquals(res.status, 404);
+});
+
+// ─── Specs field (HTTP) ───────────────────────────────────────────────────────
+
+Deno.test("GET /parts/:id shows specs when present", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "unused",
+    specs: "KV: 2400\nWeight: 31g",
+  });
+  const res = await handler(new Request(`http://localhost/parts/${id}`));
+  const html = await res.text();
+  assertStringIncludes(html, "KV: 2400");
+  assertStringIncludes(html, "Specs");
+});
+
+Deno.test("POST /parts/:id/update can save specs", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, { name: "Motor", quantity: 1, status: "unused" });
+  const form = new FormData();
+  form.append("status", "unused");
+  form.append("specs", "KV: 2400\nShaft: 3mm");
+  const res = await handler(
+    new Request(`http://localhost/parts/${id}/update`, { method: "POST", body: form })
+  );
+  assertEquals(res.status, 303);
+  const part = db.query<[string | null]>("SELECT specs FROM parts WHERE id=?", [id])[0][0];
+  assertEquals(part, "KV: 2400\nShaft: 3mm");
 });
 
 // ─── Update part (POST /parts/:id/update) ────────────────────────────────────

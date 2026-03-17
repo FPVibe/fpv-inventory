@@ -197,6 +197,68 @@ function layout(title: string, body: string): string {
 </html>`;
 }
 
+function fullAddForm(parentId?: number): string {
+  const parentInput = parentId != null
+    ? `<input type="hidden" name="parent_id" value="${parentId}">`
+    : `
+      <div class="field">
+        <label>Parent Assembly (optional)</label>
+        <select name="parent_id">
+          <option value="">(none — spare parts)</option>
+        </select>
+      </div>`;
+  const title = parentId != null ? `Add Component to Assembly` : `Add Part`;
+  const backLink = parentId != null ? `/parts/${parentId}` : "/";
+  return layout(title, `
+    <div class="breadcrumb"><a href="${backLink}">← Back</a></div>
+    <div class="card">
+      <h2>${escape(title)}</h2>
+      <form method="POST" action="/parts/new">
+        ${parentInput}
+        <div class="field">
+          <label>Name *</label>
+          <input name="name" required placeholder="e.g. 0702 Motor, Quad Alpha…" autofocus>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>Type</label>
+            <select name="type">
+              <option value="">—</option>
+              ${ALL_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <select name="status">
+              <option value="unused">Unused</option>
+              <option value="in-use">In Use</option>
+              <option value="broken">Broken</option>
+              <option value="retired">Retired</option>
+              <option value="lost">Lost</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>Quantity</label>
+          <input name="quantity" type="number" value="1" min="1" style="max-width:120px">
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <textarea name="notes" rows="3" placeholder="e.g. burned in, running on 4S only"></textarea>
+        </div>
+        <div class="field">
+          <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+          <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save Part</button>
+          <a href="${backLink}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `);
+}
+
 function quickAddForm(parentId?: number): string {
   const parentInput = parentId != null
     ? `<input type="hidden" name="parent_id" value="${parentId}">`
@@ -235,6 +297,10 @@ function quickAddForm(parentId?: number): string {
       <div class="field" style="flex:none">
         <label>&nbsp;</label>
         <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+      <div class="field" style="flex:none">
+        <label>&nbsp;</label>
+        <a href="/parts/new${parentId != null ? `?parent_id=${parentId}` : ""}" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
       </div>
     </div>
   </form>
@@ -374,6 +440,8 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           ${escape(part.quantity)}
         </div>
         ${part.notes ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>` : ""}
+        ${part.specs ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${escape(part.specs)}</pre></div>` : ""}
+        ${part.parent_id != null ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)}</a></div>` : ""}
 
         <hr style="border-color:#30363d;margin:12px 0">
 
@@ -399,6 +467,10 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <div class="field">
             <label>Notes</label>
             <textarea name="notes" rows="2">${escape(part.notes ?? "")}</textarea>
+          </div>
+          <div class="field">
+            <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${escape(part.specs ?? "")}</textarea>
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
         </form>
@@ -488,6 +560,42 @@ export function makeHandler(db: DB) {
       return new Response(null, { status: 303, headers: { Location: redirect } });
     }
 
+    // GET /parts/new — full add form
+    if (path === "/parts/new" && req.method === "GET") {
+      const parentIdStr = url.searchParams.get("parent_id");
+      const parentId = parentIdStr ? parseInt(parentIdStr, 10) : undefined;
+      return new Response(fullAddForm(parentId), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // POST /parts/new — create from full form (redirects to new part detail)
+    if (path === "/parts/new" && req.method === "POST") {
+      const form = await req.formData();
+      const name = form.get("name")?.toString().trim();
+      if (!name) {
+        return new Response("Name is required", { status: 400 });
+      }
+      const quantity = parseInt(form.get("quantity")?.toString() ?? "1", 10) || 1;
+      const status = (form.get("status")?.toString() ?? "unused") as PartStatus;
+      const typeStr = form.get("type")?.toString() || undefined;
+      const type = typeStr ? typeStr as PartType : undefined;
+      const notes = form.get("notes")?.toString().trim() || undefined;
+      const specs = form.get("specs")?.toString().trim() || undefined;
+      const parentIdStr = form.get("parent_id")?.toString();
+      const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
+      const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
+
+      let newId: number;
+      try {
+        newId = createPart(db, { name, quantity, status, type, notes, specs, parent_id });
+      } catch (err) {
+        console.error("Failed to create part:", err);
+        return new Response("Failed to create part", { status: 500 });
+      }
+      return new Response(null, { status: 303, headers: { Location: `/parts/${newId}` } });
+    }
+
     // GET /parts/:id
     const detailMatch = path.match(/^\/parts\/(\d+)$/);
     if (detailMatch && req.method === "GET") {
@@ -508,10 +616,11 @@ export function makeHandler(db: DB) {
       const typeStr = form.get("type")?.toString();
       const type = typeStr !== undefined ? (typeStr || null) as PartType | null : undefined;
       const notes = form.get("notes")?.toString();
+      const specs = form.get("specs")?.toString();
       const quantityStr = form.get("quantity")?.toString();
       const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
       try {
-        updatePart(db, id, { status, type, notes, quantity });
+        updatePart(db, id, { status, type, notes, specs, quantity });
       } catch (err) {
         console.error("Failed to update part:", err);
         return new Response("Failed to update part", { status: 500 });
