@@ -26,6 +26,43 @@ Deno.test("GET / lists top-level parts", async () => {
   assertStringIncludes(html, "Quad Alpha");
 });
 
+// ─── New part form (GET /parts/new) ──────────────────────────────────────────
+
+Deno.test("GET /parts/new returns a full add form", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/parts/new"));
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Content-Type"), "text/html; charset=utf-8");
+  const html = await res.text();
+  assertStringIncludes(html, "Add Part");
+  // Full form has notes and name fields
+  assertStringIncludes(html, 'name="name"');
+  assertStringIncludes(html, 'name="notes"');
+  assertStringIncludes(html, 'name="type"');
+});
+
+Deno.test("GET / homepage links to full add form", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/"));
+  const html = await res.text();
+  assertStringIncludes(html, "/parts/new");
+});
+
+Deno.test("POST /parts/new creates part with notes and redirects to part detail", async () => {
+  const { handler } = makeApp();
+  const form = new FormData();
+  form.append("name", "Speedybee F405");
+  form.append("quantity", "1");
+  form.append("status", "unused");
+  form.append("type", "fc");
+  form.append("notes", "brand new, needs firmware");
+  const res = await handler(new Request("http://localhost/parts/new", { method: "POST", body: form }));
+  assertEquals(res.status, 303);
+  // Redirects to the new part's detail page, not the homepage
+  const location = res.headers.get("Location") ?? "";
+  assertStringIncludes(location, "/parts/");
+});
+
 // ─── Quick-add (POST /parts) ──────────────────────────────────────────────────
 
 Deno.test("POST /parts creates a part and redirects to homepage", async () => {
