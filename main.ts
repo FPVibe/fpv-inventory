@@ -374,6 +374,7 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           ${escape(part.quantity)}
         </div>
         ${part.notes ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>` : ""}
+        ${part.parent_id != null ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)}</a></div>` : ""}
 
         <hr style="border-color:#30363d;margin:12px 0">
 
