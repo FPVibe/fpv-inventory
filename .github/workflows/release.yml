@@ -66,3 +66,26 @@ jobs:
           git add docker-compose.yml
           git diff --staged --quiet || git commit -m "chore: pin docker-compose to sha-${SHORT_SHA} [skip ci]"
           git push
+
+      - name: Update rtappstore docker-compose.json
+        if: ${{ secrets.RTAPPSTORE_PAT != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.RTAPPSTORE_PAT }}
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          NEW_IMAGE="ghcr.io/cori/fpv-inventory:sha-${SHORT_SHA}"
+          FILE_PATH="apps/fpv-inventory/docker-compose.json"
+          FILE_INFO=$(gh api repos/cori/rtappstore/contents/${FILE_PATH})
+          FILE_SHA=$(printf '%s' "$FILE_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          CURRENT_CONTENT=$(printf '%s' "$FILE_INFO" | python3 -c "import sys,json,base64; print(base64.b64decode(json.load(sys.stdin)['content']).decode())")
+          NEW_CONTENT=$(printf '%s' "$CURRENT_CONTENT" | sed "s|ghcr.io/cori/fpv-inventory:sha-[a-z0-9]*|${NEW_IMAGE}|g")
+          if [ "$NEW_CONTENT" = "$CURRENT_CONTENT" ]; then
+            echo "rtappstore already up-to-date, skipping update"
+          else
+            NEW_CONTENT_B64=$(printf '%s' "$NEW_CONTENT" | base64 -w 0)
+            gh api repos/cori/rtappstore/contents/${FILE_PATH} \
+              -X PUT \
+              -f message="chore: update fpv-inventory image to sha-${SHORT_SHA}" \
+              -f content="${NEW_CONTENT_B64}" \
+              -f sha="${FILE_SHA}"
+          fi
