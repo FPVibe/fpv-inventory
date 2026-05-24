@@ -1,6 +1,6 @@
 import { assertEquals, assertExists, assertNotEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { initDb, createPart, getPart, listParts, updatePart, movePart, getPartHistory } from "../db.ts";
-import type { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
+import { initDb, createPart, getPart, listParts, updatePart, movePart, getPartHistory, runMigrations } from "../db.ts";
+import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 
 function makeTempDb(): DB {
   return initDb(":memory:");
@@ -217,5 +217,59 @@ Deno.test("listParts can filter by type", () => {
   const motors = listParts(db, undefined, "motor");
   assertEquals(motors.length, 2);
   assertEquals(motors.every((p) => p.type === "motor"), true);
+  db.close();
+});
+
+// ─── Migrations ───────────────────────────────────────────────────────────────
+
+Deno.test("runMigrations adds missing type and specs columns to existing parts table", () => {
+  const db = new DB(":memory:");
+  db.execute(`
+    CREATE TABLE parts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unused',
+      notes TEXT,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      parent_id INTEGER REFERENCES parts(id),
+      photo_path TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE part_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_id INTEGER NOT NULL REFERENCES parts(id),
+      action TEXT NOT NULL,
+      from_parent_id INTEGER REFERENCES parts(id),
+      to_parent_id INTEGER REFERENCES parts(id),
+      old_status TEXT,
+      new_status TEXT,
+      quantity_delta INTEGER,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.query("INSERT INTO parts (name, status, quantity) VALUES ('Old Part', 'unused', 1)");
+
+  runMigrations(db);
+
+  const columns = db.query<[number, string, string, number, string | null, number]>(
+    "PRAGMA table_info(parts)"
+  ).map(row => row[1]);
+  assertEquals(columns.includes("type"), true);
+  assertEquals(columns.includes("specs"), true);
+
+  const parts = listParts(db);
+  assertEquals(parts.length, 1);
+  assertEquals(parts[0].type, null);
+  assertEquals(parts[0].specs, null);
+  db.close();
+});
+
+Deno.test("runMigrations is idempotent when columns already exist", () => {
+  const db = makeTempDb();
+  runMigrations(db);
+  const parts = listParts(db);
+  assertEquals(parts.length, 0);
   db.close();
 });
