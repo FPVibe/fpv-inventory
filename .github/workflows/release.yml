@@ -68,10 +68,14 @@ jobs:
           git push
 
       - name: Update rtappstore docker-compose.json
-        if: ${{ secrets.RTAPPSTORE_PAT != '' }}
         env:
-          GH_TOKEN: ${{ secrets.RTAPPSTORE_PAT }}
+          RTAPPSTORE_PAT: ${{ secrets.RTAPPSTORE_PAT }}
         run: |
+          if [ -z "$RTAPPSTORE_PAT" ]; then
+            echo "RTAPPSTORE_PAT not configured, skipping rtappstore update"
+            exit 0
+          fi
+          export GH_TOKEN="$RTAPPSTORE_PAT"
           SHORT_SHA=$(git rev-parse --short HEAD)
           NEW_IMAGE="ghcr.io/cori/fpv-inventory:sha-${SHORT_SHA}"
           FILE_PATH="apps/fpv-inventory/docker-compose.json"
