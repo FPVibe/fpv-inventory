@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assertNotEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { initDb, createPart, getPart, listParts, updatePart, movePart, getPartHistory, runMigrations } from "../db.ts";
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 

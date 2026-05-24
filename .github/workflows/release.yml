@@ -78,9 +78,13 @@ jobs:
           FILE_SHA=$(echo "$FILE_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
           CURRENT_CONTENT=$(echo "$FILE_INFO" | python3 -c "import sys,json,base64; print(base64.b64decode(json.load(sys.stdin)['content']).decode())")
           NEW_CONTENT=$(echo "$CURRENT_CONTENT" | sed "s|ghcr.io/cori/fpv-inventory:sha-[a-z0-9]*|${NEW_IMAGE}|g")
-          NEW_CONTENT_B64=$(echo "$NEW_CONTENT" | base64 -w 0)
-          gh api repos/cori/rtappstore/contents/${FILE_PATH} \
-            -X PUT \
-            -f message="chore: update fpv-inventory image to sha-${SHORT_SHA}" \
-            -f content="${NEW_CONTENT_B64}" \
-            -f sha="${FILE_SHA}"
+          if [ "$NEW_CONTENT" = "$CURRENT_CONTENT" ]; then
+            echo "rtappstore already up-to-date, skipping update"
+          else
+            NEW_CONTENT_B64=$(echo "$NEW_CONTENT" | base64 -w 0)
+            gh api repos/cori/rtappstore/contents/${FILE_PATH} \
+              -X PUT \
+              -f message="chore: update fpv-inventory image to sha-${SHORT_SHA}" \
+              -f content="${NEW_CONTENT_B64}" \
+              -f sha="${FILE_SHA}"
+          fi
