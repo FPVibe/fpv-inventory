@@ -50,6 +50,19 @@ export interface UpdatePartInput {
   photo_path?: string;
 }
 
+export function runMigrations(db: DB): void {
+  const columns = db.query<[number, string, string, number, string | null, number]>(
+    "PRAGMA table_info(parts)"
+  ).map(row => row[1]);
+
+  if (!columns.includes("type")) {
+    db.execute("ALTER TABLE parts ADD COLUMN type TEXT");
+  }
+  if (!columns.includes("specs")) {
+    db.execute("ALTER TABLE parts ADD COLUMN specs TEXT");
+  }
+}
+
 export function initDb(path: string): DB {
   const db = new DB(path);
   db.execute(`
@@ -80,6 +93,7 @@ export function initDb(path: string): DB {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  runMigrations(db);
   return db;
 }
 
