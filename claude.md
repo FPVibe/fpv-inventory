@@ -14,6 +14,11 @@ apt install gh -y
 
 **Always use a branch + PR workflow** — never push or commit directly to `main`. Use `gh pr create` to open a PR for review. Do not use the local git proxy; use `gh` with the token in env for all GitHub operations.
 
+### Pull Requests & Commits
+
+- Do not include session URLs, agent names, or tool identifiers in PR bodies, commit messages, or code comments — keep those to chat only
+- PR descriptions: summary bullets + a test plan checklist is enough
+
 ## Development Philosophy and Methodology
 
 ### Red-Green-Refactor (TDD)
