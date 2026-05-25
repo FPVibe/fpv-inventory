@@ -67,7 +67,7 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: pin docker-compose to sha-${SHORT_SHA} [skip ci]"
           git push
 
-      - name: Update rtappstore docker-compose.json
+      - name: Update rtappstore config and image tag
         env:
           RTAPPSTORE_PAT: ${{ secrets.RTAPPSTORE_PAT }}
         run: |
@@ -78,18 +78,37 @@ jobs:
           export GH_TOKEN="$RTAPPSTORE_PAT"
           SHORT_SHA="${GITHUB_SHA::7}"
           NEW_IMAGE="ghcr.io/cori/fpv-inventory:sha-${SHORT_SHA}"
-          FILE_PATH="apps/fpv-inventory/docker-compose.json"
-          FILE_INFO=$(gh api repos/cori/rtappstore/contents/${FILE_PATH})
-          FILE_SHA=$(printf '%s' "$FILE_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
-          CURRENT_CONTENT=$(printf '%s' "$FILE_INFO" | python3 -c "import sys,json,base64; print(base64.b64decode(json.load(sys.stdin)['content']).decode())")
-          NEW_CONTENT=$(printf '%s' "$CURRENT_CONTENT" | sed "s|ghcr.io/cori/fpv-inventory:sha-[a-z0-9]*|${NEW_IMAGE}|g")
-          if [ "$NEW_CONTENT" = "$CURRENT_CONTENT" ]; then
-            echo "rtappstore already up-to-date, skipping update"
+
+          # Update config.json: increment tipi_version only when version SHA changes
+          CONFIG_INFO=$(gh api repos/cori/rtappstore/contents/apps/fpv-inventory/config.json)
+          CONFIG_SHA=$(echo "$CONFIG_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          CURRENT_VERSION=$(echo "$CONFIG_INFO" | python3 -c "import sys,json,base64; print(json.loads(base64.b64decode(json.load(sys.stdin)['content']).decode()).get('version',''))")
+          if [ "$CURRENT_VERSION" = "sha-${SHORT_SHA}" ]; then
+            echo "rtappstore config already at sha-${SHORT_SHA}, skipping"
           else
-            NEW_CONTENT_B64=$(printf '%s' "$NEW_CONTENT" | base64 -w 0)
-            gh api repos/cori/rtappstore/contents/${FILE_PATH} \
+            NEW_CONFIG=$(echo "$CONFIG_INFO" | python3 -c "import sys,json,base64; info=json.load(sys.stdin); data=json.loads(base64.b64decode(info['content']).decode()); data['tipi_version']+=1; data['version']='sha-$SHORT_SHA'; print(json.dumps(data,indent=2))")
+            NEW_CONFIG_B64=$(printf '%s' "$NEW_CONFIG" | base64 -w 0)
+            gh api repos/cori/rtappstore/contents/apps/fpv-inventory/config.json \
+              -X PUT \
+              -f message="chore: update fpv-inventory to sha-${SHORT_SHA}" \
+              -f content="${NEW_CONFIG_B64}" \
+              -f sha="${CONFIG_SHA}"
+          fi
+
+          # Update docker-compose.json: pin to new image tag (skip if unchanged)
+          DC_INFO=$(gh api repos/cori/rtappstore/contents/apps/fpv-inventory/docker-compose.json)
+          DC_SHA=$(echo "$DC_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          DC_CONTENT=$(echo "$DC_INFO" | python3 -c "import sys,json,base64; print(base64.b64decode(json.load(sys.stdin)['content']).decode())")
+          NEW_DC=$(printf '%s' "$DC_CONTENT" | sed "s|ghcr.io/cori/fpv-inventory:sha-[a-z0-9]*|${NEW_IMAGE}|g")
+          if [ "$NEW_DC" = "$DC_CONTENT" ]; then
+            echo "rtappstore docker-compose already up-to-date, skipping"
+          else
+            NEW_DC_B64=$(printf '%s' "$NEW_DC" | base64 -w 0)
+            gh api repos/cori/rtappstore/contents/apps/fpv-inventory/docker-compose.json \
               -X PUT \
               -f message="chore: update fpv-inventory image to sha-${SHORT_SHA}" \
-              -f content="${NEW_CONTENT_B64}" \
-              -f sha="${FILE_SHA}"
+              -f content="${NEW_DC_B64}" \
+              -f sha="${DC_SHA}"
           fi
+
+          echo "rtappstore update complete for sha-${SHORT_SHA}"
