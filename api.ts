@@ -14,7 +14,7 @@ function errorResponse(message: string, status: number): Response {
 
 export function handleApi(_db: DB, req: Request, url: URL): Response | null {
   const path = url.pathname;
-  if (!path.startsWith("/api/")) return null;
+  if (path !== "/api" && !path.startsWith("/api/")) return null;
 
   if (path === "/api/health" && req.method === "GET") {
     return json({ status: "ok", version: VERSION, name: "fpv-inventory" });

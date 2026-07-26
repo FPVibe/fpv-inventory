@@ -28,6 +28,15 @@ Deno.test("GET /api/nope returns 404 JSON error, not HTML", async () => {
   assertEquals(typeof body.error, "string");
 });
 
+Deno.test("GET /api (no trailing slash) returns 404 JSON error, not HTML", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/api"));
+  assertEquals(res.status, 404);
+  assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
+  const body = await res.json();
+  assertEquals(typeof body.error, "string");
+});
+
 Deno.test("GET / still serves HTML (unaffected by API layer)", async () => {
   const { handler } = makeApp();
   const res = await handler(new Request("http://localhost/"));
