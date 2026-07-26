@@ -220,6 +220,74 @@ Deno.test("listParts can filter by type", () => {
   db.close();
 });
 
+// ─── Gear fields ──────────────────────────────────────────────────────────────
+
+Deno.test("createPart supports type: gear with serial/warranty/purchase fields", () => {
+  const db = makeTempDb();
+  const id = createPart(db, {
+    name: "Goggles",
+    quantity: 1,
+    status: "unused",
+    type: "gear",
+    serial_number: "SN-12345",
+    warranty_expiry: "2027-06-01",
+    purchase_date: "2026-06-01",
+    purchase_price: 399.99,
+  });
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.type, "gear");
+  assertEquals(part!.serial_number, "SN-12345");
+  assertEquals(part!.warranty_expiry, "2027-06-01");
+  assertEquals(part!.purchase_date, "2026-06-01");
+  assertEquals(part!.purchase_price, 399.99);
+  db.close();
+});
+
+Deno.test("createPart defaults gear fields to null", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "Radio", quantity: 1, status: "unused", type: "gear" });
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.serial_number, null);
+  assertEquals(part!.warranty_expiry, null);
+  assertEquals(part!.purchase_date, null);
+  assertEquals(part!.purchase_price, null);
+  db.close();
+});
+
+Deno.test("updatePart can set gear fields", () => {
+  const db = makeTempDb();
+  const id = createPart(db, { name: "Radio", quantity: 1, status: "unused", type: "gear" });
+  updatePart(db, id, {
+    serial_number: "SN-99",
+    warranty_expiry: "2028-01-01",
+    purchase_date: "2026-01-01",
+    purchase_price: 249.5,
+  });
+  const part = getPart(db, id);
+  assertEquals(part!.serial_number, "SN-99");
+  assertEquals(part!.warranty_expiry, "2028-01-01");
+  assertEquals(part!.purchase_date, "2026-01-01");
+  assertEquals(part!.purchase_price, 249.5);
+  db.close();
+});
+
+Deno.test("listParts includes gear fields in returned rows", () => {
+  const db = makeTempDb();
+  createPart(db, {
+    name: "Goggles",
+    quantity: 1,
+    status: "unused",
+    type: "gear",
+    serial_number: "SN-1",
+  });
+  const parts = listParts(db, undefined, "gear");
+  assertEquals(parts.length, 1);
+  assertEquals(parts[0].serial_number, "SN-1");
+  db.close();
+});
+
 // ─── Migrations ───────────────────────────────────────────────────────────────
 
 Deno.test("runMigrations adds missing type and specs columns to existing parts table", () => {
@@ -272,4 +340,69 @@ Deno.test("runMigrations is idempotent when columns already exist", () => {
   const parts = listParts(db);
   assertEquals(parts.length, 0);
   db.close();
+});
+
+Deno.test("runMigrations adds missing gear columns to existing parts table", () => {
+  const db = new DB(":memory:");
+  db.execute(`
+    CREATE TABLE parts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unused',
+      type TEXT,
+      notes TEXT,
+      specs TEXT,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      parent_id INTEGER REFERENCES parts(id),
+      photo_path TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE part_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_id INTEGER NOT NULL REFERENCES parts(id),
+      action TEXT NOT NULL,
+      from_parent_id INTEGER REFERENCES parts(id),
+      to_parent_id INTEGER REFERENCES parts(id),
+      old_status TEXT,
+      new_status TEXT,
+      quantity_delta INTEGER,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.query("INSERT INTO parts (name, status, quantity) VALUES ('Old Part', 'unused', 1)");
+
+  runMigrations(db);
+
+  const columns = db.query<[number, string, string, number, string | null, number]>(
+    "PRAGMA table_info(parts)"
+  ).map(row => row[1]);
+  assertEquals(columns.includes("serial_number"), true);
+  assertEquals(columns.includes("warranty_expiry"), true);
+  assertEquals(columns.includes("purchase_date"), true);
+  assertEquals(columns.includes("purchase_price"), true);
+
+  const parts = listParts(db);
+  assertEquals(parts.length, 1);
+  assertEquals(parts[0].serial_number, null);
+  assertEquals(parts[0].purchase_price, null);
+  db.close();
+});
+
+Deno.test("initDb run twice on the same file is idempotent", async () => {
+  const path = await Deno.makeTempFile({ suffix: ".db" });
+  try {
+    const db1 = initDb(path);
+    const id = createPart(db1, { name: "Goggles", quantity: 1, status: "unused", type: "gear", serial_number: "SN-1" });
+    db1.close();
+
+    const db2 = initDb(path);
+    const part = getPart(db2, id);
+    assertExists(part);
+    assertEquals(part!.serial_number, "SN-1");
+    db2.close();
+  } finally {
+    await Deno.remove(path);
+  }
 });
