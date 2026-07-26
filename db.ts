@@ -213,7 +213,7 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
     params.push(filter.status);
   }
   if (filter.q !== undefined) {
-    conditions.push("lower(name) LIKE '%' || lower(?) || '%'");
+    conditions.push("instr(lower(name), lower(?)) > 0");
     params.push(filter.q);
   }
 

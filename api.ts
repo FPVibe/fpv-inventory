@@ -13,9 +13,8 @@ function errorResponse(message: string, status: number): Response {
 }
 
 function parseIntParam(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const n = parseInt(value, 10);
-  return Number.isNaN(n) ? undefined : n;
+  if (value === null || !/^-?\d+$/.test(value)) return undefined;
+  return parseInt(value, 10);
 }
 
 export function handleApi(db: DB, req: Request, url: URL): Response | null {
