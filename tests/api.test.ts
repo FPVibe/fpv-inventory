@@ -101,6 +101,17 @@ Deno.test("GET /api/parts?parent_id=0 returns only top-level parts", async () =>
   assertEquals(body[0].name, "Quad");
 });
 
+Deno.test("GET /api/parts?parent_id=<garbage> ignores the malformed filter instead of matching a partial number", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
+  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  createPart(db, { name: "Loose Prop", quantity: 10, status: "unused" });
+  // "12abc" must not be parsed as parent_id=12 (parseInt would stop at the first non-digit)
+  const res = await handler(new Request(`http://localhost/api/parts?parent_id=${quadId}abc`));
+  const body = await res.json();
+  assertEquals(body.length, 3);
+});
+
 Deno.test("GET /api/parts?parent_id=<id> returns children of that part", async () => {
   const { db, handler } = makeApp();
   const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });

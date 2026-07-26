@@ -220,6 +220,22 @@ Deno.test("listParts can filter by type", () => {
   db.close();
 });
 
+Deno.test("listParts q filter treats % and _ as literal characters, not LIKE wildcards", () => {
+  const db = makeTempDb();
+  createPart(db, { name: "100% Build", quantity: 1, status: "unused" });
+  createPart(db, { name: "Plain Part", quantity: 1, status: "unused" });
+  const percentMatches = listParts(db, { q: "%" });
+  assertEquals(percentMatches.length, 1);
+  assertEquals(percentMatches[0].name, "100% Build");
+
+  createPart(db, { name: "a_b connector", quantity: 1, status: "unused" });
+  createPart(db, { name: "axb connector", quantity: 1, status: "unused" });
+  const underscoreMatches = listParts(db, { q: "a_b" });
+  assertEquals(underscoreMatches.length, 1);
+  assertEquals(underscoreMatches[0].name, "a_b connector");
+  db.close();
+});
+
 // ─── Gear fields ──────────────────────────────────────────────────────────────
 
 Deno.test("createPart supports type: gear with serial/warranty/purchase fields", () => {
