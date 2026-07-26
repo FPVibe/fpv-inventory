@@ -64,7 +64,16 @@ Val.town vals should be lightweight. Use:
 
 Every interface must work on mobile devices.
 
-- **[claude.md](./claude.md)** - Complete development guide
+- **[CLAUDE.md](./CLAUDE.md)** - Complete development guide
+
+## FPVibe Implementation Plan
+
+This repo is one of four (`fpv-inventory`, `flowchart`, `fpv-tools`, `docs`)
+being built out under FPVibe's federation architecture. The phase-ordered
+blueprint, dependency graph, and architectural decisions live in
+[`FPVibe/docs` IMPLEMENTATION-PLAN.md](https://github.com/FPVibe/docs/blob/main/IMPLEMENTATION-PLAN.md) —
+that document is authoritative; issues in this repo link back to the
+section they implement.
 
 ---
 
