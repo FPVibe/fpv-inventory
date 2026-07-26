@@ -11,6 +11,7 @@ import {
   type PartStatus,
   type PartType,
 } from "./db.ts";
+import { handleApi } from "./api.ts";
 
 const PHOTOS_DIR = Deno.env.get("PHOTOS_DIR") ?? "./photos";
 const DB_PATH = Deno.env.get("DB_PATH") ?? "./fpv-inventory.db";
@@ -525,6 +526,10 @@ export function makeHandler(db: DB) {
   return async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // JSON API — owns everything under /api/, returns null for other paths
+    const apiRes = handleApi(db, req, url);
+    if (apiRes) return apiRes;
 
     // GET /
     if (path === "/" && req.method === "GET") {
