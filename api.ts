@@ -13,7 +13,7 @@ function errorResponse(message: string, status: number): Response {
 }
 
 function parseIntParam(value: string | null): number | undefined {
-  if (value === null || !/^-?\d+$/.test(value)) return undefined;
+  if (value === null || !/^\d+$/.test(value)) return undefined;
   return parseInt(value, 10);
 }
 
