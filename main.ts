@@ -1,15 +1,15 @@
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import {
-  initDb,
   createPart,
   getPart,
-  listParts,
-  updatePart,
-  movePart,
   getPartHistory,
+  initDb,
+  listParts,
+  movePart,
   type Part,
   type PartStatus,
   type PartType,
+  updatePart,
 } from "./db.ts";
 import { handleApi } from "./api.ts";
 
@@ -47,7 +47,10 @@ const TYPE_LABELS: Record<PartType, string> = {
 };
 
 function html(strings: TemplateStringsArray, ...values: unknown[]): string {
-  return strings.reduce((acc, str, i) => acc + str + (i < values.length ? String(values[i]) : ""), "");
+  return strings.reduce(
+    (acc, str, i) => acc + str + (i < values.length ? String(values[i]) : ""),
+    "",
+  );
 }
 
 function escape(s: unknown): string {
@@ -70,11 +73,24 @@ function typeBadge(type: PartType | null): string {
   return `<span class="type-badge">${escape(label)}</span>`;
 }
 
-const ALL_TYPES = ["motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "other"] as PartType[];
+const ALL_TYPES = [
+  "motor",
+  "fc",
+  "esc",
+  "vtx",
+  "frame",
+  "camera",
+  "antenna",
+  "battery",
+  "craft",
+  "other",
+] as PartType[];
 
 function typeOptions(selected: PartType | null): string {
   return `<option value="">— any type —</option>` +
-    ALL_TYPES.map((t) => `<option value="${t}"${t === selected ? " selected" : ""}>${TYPE_LABELS[t]}</option>`).join("");
+    ALL_TYPES.map((t) =>
+      `<option value="${t}"${t === selected ? " selected" : ""}>${TYPE_LABELS[t]}</option>`
+    ).join("");
 }
 
 function layout(title: string, body: string): string {
@@ -211,7 +227,9 @@ function fullAddForm(parentId?: number): string {
       </div>`;
   const title = parentId != null ? `Add Component to Assembly` : `Add Part`;
   const backLink = parentId != null ? `/parts/${parentId}` : "/";
-  return layout(title, `
+  return layout(
+    title,
+    `
     <div class="breadcrumb"><a href="${backLink}">← Back</a></div>
     <div class="card">
       <h2>${escape(title)}</h2>
@@ -258,7 +276,8 @@ function fullAddForm(parentId?: number): string {
         </div>
       </form>
     </div>
-  `);
+  `,
+  );
 }
 
 function quickAddForm(parentId?: number): string {
@@ -302,7 +321,9 @@ function quickAddForm(parentId?: number): string {
       </div>
       <div class="field" style="flex:none">
         <label>&nbsp;</label>
-        <a href="/parts/new${parentId != null ? `?parent_id=${parentId}` : ""}" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
+        <a href="/parts/new${
+    parentId != null ? `?parent_id=${parentId}` : ""
+  }" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
       </div>
     </div>
   </form>
@@ -341,14 +362,17 @@ function homePage(db: DB, typeFilter?: PartType): string {
   ${typeFilter ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
 </form>`;
 
-  return layout("Inventory", `
+  return layout(
+    "Inventory",
+    `
     ${quickAddForm()}
     <div class="card">
       <h2>Parts &amp; Assemblies</h2>
       ${filterBar}
       ${rows}
     </div>
-  `);
+  `,
+  );
 }
 
 async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
@@ -359,9 +383,7 @@ async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
     current = current.parent_id != null ? getPart(db, current.parent_id) : null;
   }
   const links = crumbs.map((c, i) =>
-    i === crumbs.length - 1
-      ? escape(c.name)
-      : `<a href="/parts/${c.id}">${escape(c.name)}</a>`
+    i === crumbs.length - 1 ? escape(c.name) : `<a href="/parts/${c.id}">${escape(c.name)}</a>`
   );
   return `<div class="breadcrumb"><a href="/">Home</a> › ${links.join(" › ")}</div>`;
 }
@@ -369,9 +391,7 @@ async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
 function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string {
   switch (entry.action) {
     case "created":
-      return entry.to_parent_id
-        ? `Added to assembly #${entry.to_parent_id}`
-        : "Added to inventory";
+      return entry.to_parent_id ? `Added to assembly #${entry.to_parent_id}` : "Added to inventory";
     case "updated":
       return entry.old_status !== entry.new_status
         ? `Status changed: ${entry.old_status} → ${entry.new_status}`
@@ -380,8 +400,12 @@ function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string
         : "Details updated";
     case "moved":
       return entry.to_parent_id
-        ? `Moved from #${entry.from_parent_id ?? "spare parts"} to assembly #${entry.to_parent_id}${entry.notes ? ` — ${escape(entry.notes)}` : ""}`
-        : `Removed from assembly #${entry.from_parent_id}${entry.notes ? ` — ${escape(entry.notes)}` : ""}`;
+        ? `Moved from #${entry.from_parent_id ?? "spare parts"} to assembly #${entry.to_parent_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`
+        : `Removed from assembly #${entry.from_parent_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`;
     default:
       return escape(entry.action);
   }
@@ -408,7 +432,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
     <div class="history-item">
       <span class="history-action">${escape(h.action)}</span>
       — ${historyDescription(h)}
-      <span style="float:right;font-size:.75rem">${h.created_at.replace("T", " ").slice(0, 16)}</span>
+      <span style="float:right;font-size:.75rem">${
+    h.created_at.replace("T", " ").slice(0, 16)
+  }</span>
     </div>
   `).join("");
 
@@ -418,7 +444,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
 
   const currentParentId = part.parent_id;
 
-  return layout(part.name, `
+  return layout(
+    part.name,
+    `
     ${breadcrumb}
 
     <div class="grid-2">
@@ -441,9 +469,25 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <span class="label">Quantity</span>
           ${escape(part.quantity)}
         </div>
-        ${part.notes ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>` : ""}
-        ${part.specs ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${escape(part.specs)}</pre></div>` : ""}
-        ${part.parent_id != null ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)}</a></div>` : ""}
+        ${
+      part.notes
+        ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>`
+        : ""
+    }
+        ${
+      part.specs
+        ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${
+          escape(part.specs)
+        }</pre></div>`
+        : ""
+    }
+        ${
+      part.parent_id != null
+        ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${
+          escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)
+        }</a></div>`
+        : ""
+    }
 
         <hr style="border-color:#30363d;margin:12px 0">
 
@@ -451,9 +495,13 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <div class="field">
             <label>Status</label>
             <select name="status">
-              ${(["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
-                .map((s) => `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`)
-                .join("")}
+              ${
+      (["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
+        .map((s) =>
+          `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`
+        )
+        .join("")
+    }
             </select>
           </div>
           <div class="field">
@@ -472,7 +520,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           </div>
           <div class="field">
             <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
-            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${escape(part.specs ?? "")}</textarea>
+            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${
+      escape(part.specs ?? "")
+    }</textarea>
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
         </form>
@@ -483,7 +533,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <div class="field">
             <label>Move to assembly (or spare parts)</label>
             <select name="new_parent_id">
-              <option value=""${currentParentId == null ? " selected" : ""}>(spare parts / top-level)</option>
+              <option value=""${
+      currentParentId == null ? " selected" : ""
+    }>(spare parts / top-level)</option>
               ${parentOptions}
             </select>
           </div>
@@ -519,7 +571,8 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
     </div>
 
     ${quickAddForm(id)}
-  `);
+  `,
+  );
 }
 
 export function makeHandler(db: DB) {
@@ -681,7 +734,11 @@ export function makeHandler(db: DB) {
       try {
         const bytes = await Deno.readFile(`${PHOTOS_DIR}/${filename}`);
         const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
-        const contentType = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
+        const contentType = ext === "png"
+          ? "image/png"
+          : ext === "gif"
+          ? "image/gif"
+          : "image/jpeg";
         return new Response(bytes, { headers: { "Content-Type": contentType } });
       } catch {
         return new Response("Not Found", { status: 404 });
@@ -692,7 +749,9 @@ export function makeHandler(db: DB) {
   };
 }
 
-function withLogging(handler: (req: Request) => Promise<Response>): (req: Request) => Promise<Response> {
+function withLogging(
+  handler: (req: Request) => Promise<Response>,
+): (req: Request) => Promise<Response> {
   return async (req: Request) => {
     const start = Date.now();
     const { method } = req;

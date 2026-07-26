@@ -23,6 +23,7 @@ where. Part of the FPVibe federation of tools.
 ### Development Guide (`CLAUDE.md`)
 
 Comprehensive guide covering:
+
 - Deno essentials for this repo (no Node, no npm, no build step)
 - Development methodology (TDD, commits, documentation)
 - Technology choices (no React, mobile-responsive)
@@ -52,6 +53,7 @@ Comprehensive guide covering:
 ### ❌ No React
 
 fpv-inventory is server-rendered HTML from `main.ts`. Use:
+
 - Vanilla JS/TS
 - Web standards
 - HTML templates

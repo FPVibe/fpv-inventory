@@ -1,4 +1,12 @@
-import { DB, getPart, getPartHistory, listParts, type PartFilter, type PartStatus, type PartType } from "./db.ts";
+import {
+  DB,
+  getPart,
+  getPartHistory,
+  listParts,
+  type PartFilter,
+  type PartStatus,
+  type PartType,
+} from "./db.ts";
 import { VERSION } from "./version.ts";
 
 export function json(data: unknown, status = 200): Response {
@@ -18,7 +26,17 @@ function parseIntParam(value: string | null): number | undefined {
 }
 
 const PART_TYPES: readonly PartType[] = [
-  "motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "gear", "other",
+  "motor",
+  "fc",
+  "esc",
+  "vtx",
+  "frame",
+  "camera",
+  "antenna",
+  "battery",
+  "craft",
+  "gear",
+  "other",
 ];
 const PART_STATUSES: readonly PartStatus[] = ["unused", "in-use", "broken", "retired", "lost"];
 
