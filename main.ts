@@ -41,6 +41,7 @@ const TYPE_LABELS: Record<PartType, string> = {
   "antenna": "Antenna",
   "battery": "Battery",
   "craft": "Craft",
+  "gear": "Gear",
   "other": "Other",
 };
 
