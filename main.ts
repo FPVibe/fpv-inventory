@@ -94,125 +94,127 @@ function typeOptions(selected: PartType | null): string {
 }
 
 function layout(title: string, body: string): string {
-  return html`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escape(title)} — FPV Inventory</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      min-height: 100vh;
-      padding: 0 0 80px;
-    }
-    a { color: #58a6ff; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    header {
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    header h1 { font-size: 1.1rem; font-weight: 600; }
-    header h1 a { color: #e6edf3; }
-    .container { max-width: 860px; margin: 0 auto; padding: 20px 16px; }
-    .card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    .card h2 { font-size: 1rem; margin-bottom: 12px; color: #8b949e; text-transform: uppercase; font-size: .75rem; letter-spacing: .04em; }
-    .btn {
-      display: inline-block;
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: 1px solid #30363d;
-      background: #21262d;
-      color: #e6edf3;
-      font-size: .875rem;
-      cursor: pointer;
-      text-decoration: none;
-    }
-    .btn:hover { background: #30363d; text-decoration: none; }
-    .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
-    .btn-primary:hover { background: #2ea043; }
-    .btn-danger { background: #b91c1c; border-color: #ef4444; color: #fff; }
-    .btn-sm { padding: 3px 10px; font-size: .8rem; }
-    input, select, textarea {
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e6edf3;
-      padding: 6px 10px;
-      font-size: .9rem;
-      width: 100%;
-    }
-    input:focus, select:focus, textarea:focus {
-      outline: none;
-      border-color: #58a6ff;
-    }
-    label { font-size: .875rem; color: #8b949e; display: block; margin-bottom: 4px; }
-    .field { margin-bottom: 12px; }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: .75rem;
-      color: #fff;
-      font-weight: 600;
-    }
-    .part-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 0;
-      border-bottom: 1px solid #21262d;
-    }
-    .part-row:last-child { border-bottom: none; }
-    .part-name { flex: 1; font-weight: 500; }
-    .part-meta { font-size: .8rem; color: #8b949e; }
-    .history-item {
-      padding: 8px 0;
-      border-bottom: 1px solid #21262d;
-      font-size: .85rem;
-      color: #8b949e;
-    }
-    .history-item:last-child { border-bottom: none; }
-    .history-action { color: #e6edf3; font-weight: 500; }
-    .breadcrumb { font-size: .85rem; margin-bottom: 16px; color: #8b949e; }
-    .breadcrumb a { color: #58a6ff; }
-    .quick-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
-    .quick-add .field { margin-bottom: 0; flex: 1; min-width: 120px; }
-    .photo-preview { max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 8px; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 600px) {
-      .grid-2 { grid-template-columns: 1fr; }
-      .quick-add { flex-direction: column; }
-    }
-    .empty { color: #8b949e; font-size: .9rem; padding: 12px 0; }
-    .detail-field { margin-bottom: 8px; font-size: .9rem; }
-    .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
-    .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
-    .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
-  </style>
-</head>
-<body>
-  <header>
-    <h1><a href="/">🚁 FPV Inventory</a></h1>
-  </header>
-  <div class="container">
-    ${body}
-  </div>
-</body>
-</html>`;
+  return html`
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${escape(title)} — FPV Inventory</title>
+        <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: system-ui, -apple-system, sans-serif;
+          background: #0d1117;
+          color: #e6edf3;
+          min-height: 100vh;
+          padding: 0 0 80px;
+        }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        header {
+          background: #161b22;
+          border-bottom: 1px solid #30363d;
+          padding: 12px 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        header h1 { font-size: 1.1rem; font-weight: 600; }
+        header h1 a { color: #e6edf3; }
+        .container { max-width: 860px; margin: 0 auto; padding: 20px 16px; }
+        .card {
+          background: #161b22;
+          border: 1px solid #30363d;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 16px;
+        }
+        .card h2 { font-size: 1rem; margin-bottom: 12px; color: #8b949e; text-transform: uppercase; font-size: .75rem; letter-spacing: .04em; }
+        .btn {
+          display: inline-block;
+          padding: 6px 14px;
+          border-radius: 6px;
+          border: 1px solid #30363d;
+          background: #21262d;
+          color: #e6edf3;
+          font-size: .875rem;
+          cursor: pointer;
+          text-decoration: none;
+        }
+        .btn:hover { background: #30363d; text-decoration: none; }
+        .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-danger { background: #b91c1c; border-color: #ef4444; color: #fff; }
+        .btn-sm { padding: 3px 10px; font-size: .8rem; }
+        input, select, textarea {
+          background: #0d1117;
+          border: 1px solid #30363d;
+          border-radius: 6px;
+          color: #e6edf3;
+          padding: 6px 10px;
+          font-size: .9rem;
+          width: 100%;
+        }
+        input:focus, select:focus, textarea:focus {
+          outline: none;
+          border-color: #58a6ff;
+        }
+        label { font-size: .875rem; color: #8b949e; display: block; margin-bottom: 4px; }
+        .field { margin-bottom: 12px; }
+        .badge {
+          display: inline-block;
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: .75rem;
+          color: #fff;
+          font-weight: 600;
+        }
+        .part-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 0;
+          border-bottom: 1px solid #21262d;
+        }
+        .part-row:last-child { border-bottom: none; }
+        .part-name { flex: 1; font-weight: 500; }
+        .part-meta { font-size: .8rem; color: #8b949e; }
+        .history-item {
+          padding: 8px 0;
+          border-bottom: 1px solid #21262d;
+          font-size: .85rem;
+          color: #8b949e;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-action { color: #e6edf3; font-weight: 500; }
+        .breadcrumb { font-size: .85rem; margin-bottom: 16px; color: #8b949e; }
+        .breadcrumb a { color: #58a6ff; }
+        .quick-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+        .quick-add .field { margin-bottom: 0; flex: 1; min-width: 120px; }
+        .photo-preview { max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 8px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 600px) {
+          .grid-2 { grid-template-columns: 1fr; }
+          .quick-add { flex-direction: column; }
+        }
+        .empty { color: #8b949e; font-size: .9rem; padding: 12px 0; }
+        .detail-field { margin-bottom: 8px; font-size: .9rem; }
+        .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
+        .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
+        .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
+      </style>
+      </head>
+      <body>
+        <header>
+          <h1><a href="/">🚁 FPV Inventory</a></h1>
+        </header>
+        <div class="container">
+        ${body}
+      </div>
+      </body>
+    </html>
+  `;
 }
 
 function fullAddForm(parentId?: number): string {
