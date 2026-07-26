@@ -1,4 +1,4 @@
-import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
+import { DB, type QueryParameter } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 
 export type PartStatus = "unused" | "in-use" | "broken" | "retired" | "lost";
 export type PartType = "motor" | "fc" | "esc" | "vtx" | "frame" | "camera" | "antenna" | "battery" | "craft" | "gear" | "other";
@@ -182,24 +182,43 @@ export function getPart(db: DB, id: number): Part | null {
   };
 }
 
-export function listParts(db: DB, parent_id?: number | null, type?: PartType): Part[] {
+export interface PartFilter {
+  parent_id?: number | null;
+  type?: PartType;
+  status?: PartStatus;
+  q?: string;
+}
+
+export function listParts(db: DB, filter: PartFilter = {}): Part[] {
   type Row = [number, string, string, string | null, string | null, string | null, number, number | null, string | null, string | null, string | null, string | null, number | null, string, string];
   const select = `SELECT id, name, status, type, notes, specs, quantity, parent_id, photo_path, serial_number, warranty_expiry, purchase_date, purchase_price, created_at, updated_at FROM parts`;
-  let rows: Row[];
 
-  if (parent_id === undefined && type === undefined) {
-    rows = db.query(`${select} ORDER BY name`);
-  } else if (parent_id === undefined) {
-    rows = db.query(`${select} WHERE type = ? ORDER BY name`, [type!]);
-  } else if (parent_id === null && type === undefined) {
-    rows = db.query(`${select} WHERE parent_id IS NULL ORDER BY name`);
-  } else if (parent_id === null) {
-    rows = db.query(`${select} WHERE parent_id IS NULL AND type = ? ORDER BY name`, [type!]);
-  } else if (type === undefined) {
-    rows = db.query(`${select} WHERE parent_id = ? ORDER BY name`, [parent_id]);
-  } else {
-    rows = db.query(`${select} WHERE parent_id = ? AND type = ? ORDER BY name`, [parent_id, type]);
+  const conditions: string[] = [];
+  const params: QueryParameter[] = [];
+
+  if (filter.parent_id !== undefined) {
+    if (filter.parent_id === null) {
+      conditions.push("parent_id IS NULL");
+    } else {
+      conditions.push("parent_id = ?");
+      params.push(filter.parent_id);
+    }
   }
+  if (filter.type !== undefined) {
+    conditions.push("type = ?");
+    params.push(filter.type);
+  }
+  if (filter.status !== undefined) {
+    conditions.push("status = ?");
+    params.push(filter.status);
+  }
+  if (filter.q !== undefined) {
+    conditions.push("lower(name) LIKE '%' || lower(?) || '%'");
+    params.push(filter.q);
+  }
+
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
+  const rows: Row[] = db.query(`${select}${where} ORDER BY name`, params);
 
   return rows.map(([id, name, status, partType, notes, specs, quantity, parent_id, photo_path, serial_number, warranty_expiry, purchase_date, purchase_price, created_at, updated_at]) => ({
     id,

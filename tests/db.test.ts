@@ -69,7 +69,7 @@ Deno.test("listParts filters by parent_id", () => {
   const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
   createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
   createPart(db, { name: "Loose prop", quantity: 10, status: "unused" });
-  const children = listParts(db, quadId);
+  const children = listParts(db, { parent_id: quadId });
   assertEquals(children.length, 1);
   assertEquals(children[0].name, "Motor");
   db.close();
@@ -80,7 +80,7 @@ Deno.test("listParts with null parent_id returns top-level parts", () => {
   const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
   createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
   createPart(db, { name: "Loose prop", quantity: 10, status: "unused" });
-  const topLevel = listParts(db, null);
+  const topLevel = listParts(db, { parent_id: null });
   assertEquals(topLevel.length, 2);
   db.close();
 });
@@ -214,7 +214,7 @@ Deno.test("listParts can filter by type", () => {
   createPart(db, { name: "Motor B", quantity: 4, status: "unused", type: "motor" });
   createPart(db, { name: "Frame X", quantity: 1, status: "unused", type: "frame" });
   createPart(db, { name: "Unknown Part", quantity: 1, status: "unused" });
-  const motors = listParts(db, undefined, "motor");
+  const motors = listParts(db, { type: "motor" });
   assertEquals(motors.length, 2);
   assertEquals(motors.every((p) => p.type === "motor"), true);
   db.close();
@@ -282,7 +282,7 @@ Deno.test("listParts includes gear fields in returned rows", () => {
     type: "gear",
     serial_number: "SN-1",
   });
-  const parts = listParts(db, undefined, "gear");
+  const parts = listParts(db, { type: "gear" });
   assertEquals(parts.length, 1);
   assertEquals(parts[0].serial_number, "SN-1");
   db.close();

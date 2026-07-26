@@ -327,7 +327,7 @@ function partRow(part: Part): string {
 }
 
 function homePage(db: DB, typeFilter?: PartType): string {
-  const parts = listParts(db, null, typeFilter);
+  const parts = listParts(db, { parent_id: null, type: typeFilter });
   const rows = parts.length > 0
     ? parts.map(partRow).join("")
     : `<p class="empty">No parts yet — add something above.</p>`;
@@ -391,7 +391,7 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
   const part = getPart(db, id);
   if (!part) return null;
 
-  const children = listParts(db, id);
+  const children = listParts(db, { parent_id: id });
   const history = getPartHistory(db, id);
   const allParts = listParts(db).filter((p) => p.id !== id);
   const breadcrumb = await buildBreadcrumb(db, id);
