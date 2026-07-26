@@ -17,6 +17,19 @@ function parseIntParam(value: string | null): number | undefined {
   return parseInt(value, 10);
 }
 
+const PART_TYPES: readonly PartType[] = [
+  "motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "gear", "other",
+];
+const PART_STATUSES: readonly PartStatus[] = ["unused", "in-use", "broken", "retired", "lost"];
+
+function isPartType(value: string): value is PartType {
+  return (PART_TYPES as readonly string[]).includes(value);
+}
+
+function isPartStatus(value: string): value is PartStatus {
+  return (PART_STATUSES as readonly string[]).includes(value);
+}
+
 export function handleApi(db: DB, req: Request, url: URL): Response | null {
   const path = url.pathname;
   if (path !== "/api" && !path.startsWith("/api/")) return null;
@@ -32,8 +45,14 @@ export function handleApi(db: DB, req: Request, url: URL): Response | null {
     const q = url.searchParams.get("q");
     const parentIdParam = url.searchParams.get("parent_id");
 
-    if (type !== null) filter.type = type as PartType;
-    if (status !== null) filter.status = status as PartStatus;
+    if (type !== null) {
+      if (!isPartType(type)) return json([]);
+      filter.type = type;
+    }
+    if (status !== null) {
+      if (!isPartStatus(status)) return json([]);
+      filter.status = status;
+    }
     if (q !== null) filter.q = q;
     const parentId = parseIntParam(parentIdParam);
     if (parentId !== undefined) filter.parent_id = parentId === 0 ? null : parentId;
