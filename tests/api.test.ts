@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createPart, initDb } from "../db.ts";
+import { createPart, initDb, type PartStatus, type PartType } from "../db.ts";
 import { makeHandler } from "../main.ts";
 import { VERSION } from "../version.ts";
 
@@ -78,6 +78,22 @@ Deno.test("GET /api/parts with an invalid type returns [] not an error", async (
   createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
   const res = await handler(new Request("http://localhost/api/parts?type=not-a-real-type"));
   assertEquals(res.status, 200);
+  assertEquals(await res.json(), []);
+});
+
+Deno.test("GET /api/parts?type=<invalid> returns [] even if the DB contains that literal value", async () => {
+  const { db, handler } = makeApp();
+  // Legacy/corrupt data: main.ts's form handlers cast arbitrary strings to PartType
+  // without validation, so a row like this can exist in the wild.
+  createPart(db, { name: "Weird Part", quantity: 1, status: "unused", type: "not-a-real-type" as PartType });
+  const res = await handler(new Request("http://localhost/api/parts?type=not-a-real-type"));
+  assertEquals(await res.json(), []);
+});
+
+Deno.test("GET /api/parts?status=<invalid> returns [] even if the DB contains that literal value", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Weird Part", quantity: 1, status: "not-a-real-status" as PartStatus });
+  const res = await handler(new Request("http://localhost/api/parts?status=not-a-real-status"));
   assertEquals(await res.json(), []);
 });
 
