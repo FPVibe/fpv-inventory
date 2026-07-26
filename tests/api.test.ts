@@ -112,6 +112,16 @@ Deno.test("GET /api/parts?parent_id=<garbage> ignores the malformed filter inste
   assertEquals(body.length, 3);
 });
 
+Deno.test("GET /api/parts?parent_id=-1 rejects negative ids instead of filtering by them", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
+  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  // Real ids are never negative; -1 must be ignored as malformed, not applied as a (perpetually empty) filter
+  const res = await handler(new Request("http://localhost/api/parts?parent_id=-1"));
+  const body = await res.json();
+  assertEquals(body.length, 2);
+});
+
 Deno.test("GET /api/parts?parent_id=<id> returns children of that part", async () => {
   const { db, handler } = makeApp();
   const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
