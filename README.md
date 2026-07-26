@@ -1,38 +1,35 @@
-# Template for Claude Code
+# fpv-inventory
 
-A template repository for buildingusing Claude Code, optimized for Claude Code on the web.
+An inventory app for FPV quads and parts bins — track parts, builds, and
+gear, nest components into assemblies, and keep a history of what's moved
+where. Part of the FPVibe federation of tools.
 
 ## What is This?
 
-This template provides a development environment and guidelines for building with Claude Code. It includes:
-
-- **Development guidelines** in `claude.md` for best practices
+- **Development guidelines** in [`CLAUDE.md`](./CLAUDE.md) for best practices
 
 ## Quick Start
 
-### Using This Template
-
-1. **Create a new repository from this template**
-   - Click "Use this template" on GitHub
-   - Or: Clone and start building
-
-2. **Open in a dev container**
+1. **Open in a dev container**
    - GitHub Codespaces: Click "Code" → "Create codespace"
    - VS Code: "Reopen in Container"
    - Claude Code on web: Will automatically use the devcontainer
 
-### Development Guide (`claude.md`)
+2. **Run it**
+   - `deno task dev` — starts the server with `--watch`
+   - `deno task test` — run the test suite
+   - `deno task check` — type-check the repo
+
+### Development Guide (`CLAUDE.md`)
 
 Comprehensive guide covering:
-- Val.town essentials (auth, storage, runtime)
+- Deno essentials for this repo (no Node, no npm, no build step)
 - Development methodology (TDD, commits, documentation)
 - Technology choices (no React, mobile-responsive)
+- FPVibe federation guardrails and Copilot review loop
 - Testing strategy
-- Project structure recommendations
 
 ## Development Philosophy
-
-This template enforces specific best practices:
 
 ### ✅ Red-Green-Refactor (TDD)
 
@@ -54,7 +51,7 @@ This template enforces specific best practices:
 
 ### ❌ No React
 
-Val.town vals should be lightweight. Use:
+fpv-inventory is server-rendered HTML from `main.ts`. Use:
 - Vanilla JS/TS
 - Web standards
 - HTML templates
@@ -63,8 +60,6 @@ Val.town vals should be lightweight. Use:
 ### ✅ Mobile-Responsive
 
 Every interface must work on mobile devices.
-
-- **[CLAUDE.md](./CLAUDE.md)** - Complete development guide
 
 ## FPVibe Implementation Plan
 
