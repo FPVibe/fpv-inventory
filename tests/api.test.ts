@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { initDb } from "../db.ts";
+import { createPart, initDb } from "../db.ts";
 import { makeHandler } from "../main.ts";
 import { VERSION } from "../version.ts";
 
@@ -42,4 +42,115 @@ Deno.test("GET / still serves HTML (unaffected by API layer)", async () => {
   const res = await handler(new Request("http://localhost/"));
   assertEquals(res.status, 200);
   assertEquals(res.headers.get("Content-Type"), "text/html; charset=utf-8");
+});
+
+// ─── GET /api/parts ───────────────────────────────────────────────────────────
+
+Deno.test("GET /api/parts returns [] for an empty DB", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/api/parts"));
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
+  assertEquals(await res.json(), []);
+});
+
+Deno.test("GET /api/parts returns all parts", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  createPart(db, { name: "Frame X", quantity: 1, status: "unused", type: "frame" });
+  const res = await handler(new Request("http://localhost/api/parts"));
+  const body = await res.json();
+  assertEquals(body.length, 2);
+});
+
+Deno.test("GET /api/parts filters by type", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  createPart(db, { name: "Frame X", quantity: 1, status: "unused", type: "frame" });
+  const res = await handler(new Request("http://localhost/api/parts?type=motor"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "Motor A");
+});
+
+Deno.test("GET /api/parts with an invalid type returns [] not an error", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  const res = await handler(new Request("http://localhost/api/parts?type=not-a-real-type"));
+  assertEquals(res.status, 200);
+  assertEquals(await res.json(), []);
+});
+
+Deno.test("GET /api/parts filters by status", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Motor A", quantity: 4, status: "unused" });
+  createPart(db, { name: "Motor B", quantity: 4, status: "broken" });
+  const res = await handler(new Request("http://localhost/api/parts?status=broken"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "Motor B");
+});
+
+Deno.test("GET /api/parts?parent_id=0 returns only top-level parts", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
+  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const res = await handler(new Request("http://localhost/api/parts?parent_id=0"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "Quad");
+});
+
+Deno.test("GET /api/parts?parent_id=<id> returns children of that part", async () => {
+  const { db, handler } = makeApp();
+  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
+  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const res = await handler(new Request(`http://localhost/api/parts?parent_id=${quadId}`));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "Motor");
+});
+
+Deno.test("GET /api/parts?q= matches case-insensitive substring of name", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "0702 Motor", quantity: 4, status: "unused" });
+  createPart(db, { name: "Frame X", quantity: 1, status: "unused" });
+  const res = await handler(new Request("http://localhost/api/parts?q=MOTOR"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "0702 Motor");
+});
+
+Deno.test("GET /api/parts combines type and q filters", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "0702 Motor", quantity: 4, status: "unused", type: "motor" });
+  createPart(db, { name: "Frame Motor Mount", quantity: 1, status: "unused", type: "frame" });
+  const res = await handler(new Request("http://localhost/api/parts?type=motor&q=0702"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "0702 Motor");
+});
+
+// ─── GET /api/parts/:id ───────────────────────────────────────────────────────
+
+Deno.test("GET /api/parts/:id returns part with history", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, { name: "0702 Motor", quantity: 4, status: "unused", type: "motor" });
+  const res = await handler(new Request(`http://localhost/api/parts/${id}`));
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.id, id);
+  assertEquals(body.name, "0702 Motor");
+  assertEquals(Array.isArray(body.history), true);
+  assertEquals(body.history.length, 1);
+  assertEquals(body.history[0].action, "created");
+});
+
+Deno.test("GET /api/parts/:id returns 404 JSON error when missing", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/api/parts/999999"));
+  assertEquals(res.status, 404);
+  assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
+  const body = await res.json();
+  assertEquals(body.error, "Part not found");
 });
