@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { initDb, createPart } from "../db.ts";
+import { createPart, initDb } from "../db.ts";
 import { makeHandler } from "../main.ts";
 
 function makeApp() {
@@ -56,7 +56,9 @@ Deno.test("POST /parts/new creates part with notes and redirects to part detail"
   form.append("status", "unused");
   form.append("type", "fc");
   form.append("notes", "brand new, needs firmware");
-  const res = await handler(new Request("http://localhost/parts/new", { method: "POST", body: form }));
+  const res = await handler(
+    new Request("http://localhost/parts/new", { method: "POST", body: form }),
+  );
   assertEquals(res.status, 303);
   // Redirects to the new part's detail page, not the homepage
   const location = res.headers.get("Location") ?? "";
@@ -145,7 +147,12 @@ Deno.test("GET /parts/:id shows child parts", async () => {
 Deno.test("GET /parts/:id shows parent assembly name when part belongs to one", async () => {
   const { db, handler } = makeApp();
   const quadId = createPart(db, { name: "Quad Alpha", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const motorId = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "in-use",
+    parent_id: quadId,
+  });
   const res = await handler(new Request(`http://localhost/parts/${motorId}`));
   assertEquals(res.status, 200);
   const html = await res.text();
@@ -169,12 +176,12 @@ Deno.test("GET /parts/:id shows child parts with assembly indicator in their row
   const quadId = createPart(db, { name: "Quad Beta", quantity: 1, status: "in-use" });
   createPart(db, { name: "ESC", quantity: 1, status: "in-use", parent_id: quadId });
   // When viewing the ESC directly, it shows the parent assembly name
-  const escId = (await (async () => {
+  const escId = await (async () => {
     const res2 = await handler(new Request(`http://localhost/parts/${quadId}`));
     const html2 = await res2.text();
     assertStringIncludes(html2, "ESC");
     return null;
-  })());
+  })();
   void escId;
 });
 
@@ -215,7 +222,7 @@ Deno.test("POST /parts/:id/update can save specs", async () => {
   form.append("status", "unused");
   form.append("specs", "KV: 2400\nShaft: 3mm");
   const res = await handler(
-    new Request(`http://localhost/parts/${id}/update`, { method: "POST", body: form })
+    new Request(`http://localhost/parts/${id}/update`, { method: "POST", body: form }),
   );
   assertEquals(res.status, 303);
   const part = db.query<[string | null]>("SELECT specs FROM parts WHERE id=?", [id])[0][0];
@@ -231,7 +238,7 @@ Deno.test("POST /parts/:id/update changes status and redirects", async () => {
   form.append("status", "broken");
   form.append("notes", "burned out");
   const res = await handler(
-    new Request(`http://localhost/parts/${id}/update`, { method: "POST", body: form })
+    new Request(`http://localhost/parts/${id}/update`, { method: "POST", body: form }),
   );
   assertEquals(res.status, 303);
   assertStringIncludes(res.headers.get("Location") ?? "", `/parts/${id}`);
@@ -243,12 +250,17 @@ Deno.test("POST /parts/:id/move reassigns parent and redirects", async () => {
   const { db, handler } = makeApp();
   const quad1Id = createPart(db, { name: "Quad 1", quantity: 1, status: "in-use" });
   const quad2Id = createPart(db, { name: "Quad 2", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quad1Id });
+  const motorId = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "in-use",
+    parent_id: quad1Id,
+  });
   const form = new FormData();
   form.append("new_parent_id", String(quad2Id));
   form.append("notes", "Salvaged");
   const res = await handler(
-    new Request(`http://localhost/parts/${motorId}/move`, { method: "POST", body: form })
+    new Request(`http://localhost/parts/${motorId}/move`, { method: "POST", body: form }),
   );
   assertEquals(res.status, 303);
 });
@@ -261,7 +273,7 @@ Deno.test("POST /parts/:id/photo requires a file", async () => {
   const form = new FormData();
   // no file attached
   const res = await handler(
-    new Request(`http://localhost/parts/${id}/photo`, { method: "POST", body: form })
+    new Request(`http://localhost/parts/${id}/photo`, { method: "POST", body: form }),
   );
   assertEquals(res.status, 400);
 });

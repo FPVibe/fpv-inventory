@@ -59,6 +59,7 @@ We follow test-driven development rigorously:
    - Commit refactoring: `git commit -m "refactor: improve feature X implementation"`
 
 **Coverage Expectations**:
+
 - **Feature Coverage**: Good - Most user-facing features should have tests
 - **Function Coverage**: Reasonable - Core business logic should be tested, not every helper
 
@@ -107,6 +108,7 @@ is part of Definition of Done everywhere (IMPLEMENTATION-PLAN.md §1.4 in
 This bears repeating: **Do not use React**.
 
 FPVibe tools are lightweight and framework-free. Use:
+
 - Vanilla JavaScript/TypeScript
 - Web standards (fetch, Request, Response)
 - HTML templates (template literals, tagged templates)
@@ -116,6 +118,7 @@ FPVibe tools are lightweight and framework-free. Use:
 #### ✅ Use What Makes Sense
 
 Beyond "no React," choose the best tool for the job:
+
 - **TypeScript** for type safety
 - **Deno standard library** for utilities (in Deno repos)
 - **Web Components** if you need component architecture
@@ -129,6 +132,7 @@ Hono + better-sqlite3, `fpv-inventory` is Deno + `deno.land/x/sqlite`,
 #### Mobile-Responsive Always
 
 Every interface must work well on mobile:
+
 - Use responsive CSS (flexbox, grid, media queries)
 - Test on various viewport sizes
 - Touch-friendly UI elements
@@ -179,6 +183,7 @@ These come from `FPVibe/docs` `ARCHITECTURE.md` §11 and are non-negotiable:
 ### What to Test
 
 ✅ **Do test**:
+
 - Business logic
 - API endpoints (request/response)
 - Data transformations
@@ -186,6 +191,7 @@ These come from `FPVibe/docs` `ARCHITECTURE.md` §11 and are non-negotiable:
 - Error handling
 
 ❌ **Don't test**:
+
 - The runtime's standard library
 - Third-party libraries
 - Trivial getters/setters

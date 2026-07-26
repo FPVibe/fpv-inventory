@@ -1,15 +1,15 @@
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import {
-  initDb,
   createPart,
   getPart,
-  listParts,
-  updatePart,
-  movePart,
   getPartHistory,
+  initDb,
+  listParts,
+  movePart,
   type Part,
   type PartStatus,
   type PartType,
+  updatePart,
 } from "./db.ts";
 import { handleApi } from "./api.ts";
 
@@ -47,7 +47,10 @@ const TYPE_LABELS: Record<PartType, string> = {
 };
 
 function html(strings: TemplateStringsArray, ...values: unknown[]): string {
-  return strings.reduce((acc, str, i) => acc + str + (i < values.length ? String(values[i]) : ""), "");
+  return strings.reduce(
+    (acc, str, i) => acc + str + (i < values.length ? String(values[i]) : ""),
+    "",
+  );
 }
 
 function escape(s: unknown): string {
@@ -70,133 +73,148 @@ function typeBadge(type: PartType | null): string {
   return `<span class="type-badge">${escape(label)}</span>`;
 }
 
-const ALL_TYPES = ["motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "other"] as PartType[];
+const ALL_TYPES = [
+  "motor",
+  "fc",
+  "esc",
+  "vtx",
+  "frame",
+  "camera",
+  "antenna",
+  "battery",
+  "craft",
+  "other",
+] as PartType[];
 
 function typeOptions(selected: PartType | null): string {
   return `<option value="">— any type —</option>` +
-    ALL_TYPES.map((t) => `<option value="${t}"${t === selected ? " selected" : ""}>${TYPE_LABELS[t]}</option>`).join("");
+    ALL_TYPES.map((t) =>
+      `<option value="${t}"${t === selected ? " selected" : ""}>${TYPE_LABELS[t]}</option>`
+    ).join("");
 }
 
 function layout(title: string, body: string): string {
-  return html`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escape(title)} — FPV Inventory</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      min-height: 100vh;
-      padding: 0 0 80px;
-    }
-    a { color: #58a6ff; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    header {
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    header h1 { font-size: 1.1rem; font-weight: 600; }
-    header h1 a { color: #e6edf3; }
-    .container { max-width: 860px; margin: 0 auto; padding: 20px 16px; }
-    .card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    .card h2 { font-size: 1rem; margin-bottom: 12px; color: #8b949e; text-transform: uppercase; font-size: .75rem; letter-spacing: .04em; }
-    .btn {
-      display: inline-block;
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: 1px solid #30363d;
-      background: #21262d;
-      color: #e6edf3;
-      font-size: .875rem;
-      cursor: pointer;
-      text-decoration: none;
-    }
-    .btn:hover { background: #30363d; text-decoration: none; }
-    .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
-    .btn-primary:hover { background: #2ea043; }
-    .btn-danger { background: #b91c1c; border-color: #ef4444; color: #fff; }
-    .btn-sm { padding: 3px 10px; font-size: .8rem; }
-    input, select, textarea {
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e6edf3;
-      padding: 6px 10px;
-      font-size: .9rem;
-      width: 100%;
-    }
-    input:focus, select:focus, textarea:focus {
-      outline: none;
-      border-color: #58a6ff;
-    }
-    label { font-size: .875rem; color: #8b949e; display: block; margin-bottom: 4px; }
-    .field { margin-bottom: 12px; }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: .75rem;
-      color: #fff;
-      font-weight: 600;
-    }
-    .part-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 0;
-      border-bottom: 1px solid #21262d;
-    }
-    .part-row:last-child { border-bottom: none; }
-    .part-name { flex: 1; font-weight: 500; }
-    .part-meta { font-size: .8rem; color: #8b949e; }
-    .history-item {
-      padding: 8px 0;
-      border-bottom: 1px solid #21262d;
-      font-size: .85rem;
-      color: #8b949e;
-    }
-    .history-item:last-child { border-bottom: none; }
-    .history-action { color: #e6edf3; font-weight: 500; }
-    .breadcrumb { font-size: .85rem; margin-bottom: 16px; color: #8b949e; }
-    .breadcrumb a { color: #58a6ff; }
-    .quick-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
-    .quick-add .field { margin-bottom: 0; flex: 1; min-width: 120px; }
-    .photo-preview { max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 8px; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 600px) {
-      .grid-2 { grid-template-columns: 1fr; }
-      .quick-add { flex-direction: column; }
-    }
-    .empty { color: #8b949e; font-size: .9rem; padding: 12px 0; }
-    .detail-field { margin-bottom: 8px; font-size: .9rem; }
-    .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
-    .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
-    .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
-  </style>
-</head>
-<body>
-  <header>
-    <h1><a href="/">🚁 FPV Inventory</a></h1>
-  </header>
-  <div class="container">
-    ${body}
-  </div>
-</body>
-</html>`;
+  return html`
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${escape(title)} — FPV Inventory</title>
+        <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: system-ui, -apple-system, sans-serif;
+          background: #0d1117;
+          color: #e6edf3;
+          min-height: 100vh;
+          padding: 0 0 80px;
+        }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        header {
+          background: #161b22;
+          border-bottom: 1px solid #30363d;
+          padding: 12px 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        header h1 { font-size: 1.1rem; font-weight: 600; }
+        header h1 a { color: #e6edf3; }
+        .container { max-width: 860px; margin: 0 auto; padding: 20px 16px; }
+        .card {
+          background: #161b22;
+          border: 1px solid #30363d;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 16px;
+        }
+        .card h2 { font-size: 1rem; margin-bottom: 12px; color: #8b949e; text-transform: uppercase; font-size: .75rem; letter-spacing: .04em; }
+        .btn {
+          display: inline-block;
+          padding: 6px 14px;
+          border-radius: 6px;
+          border: 1px solid #30363d;
+          background: #21262d;
+          color: #e6edf3;
+          font-size: .875rem;
+          cursor: pointer;
+          text-decoration: none;
+        }
+        .btn:hover { background: #30363d; text-decoration: none; }
+        .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-danger { background: #b91c1c; border-color: #ef4444; color: #fff; }
+        .btn-sm { padding: 3px 10px; font-size: .8rem; }
+        input, select, textarea {
+          background: #0d1117;
+          border: 1px solid #30363d;
+          border-radius: 6px;
+          color: #e6edf3;
+          padding: 6px 10px;
+          font-size: .9rem;
+          width: 100%;
+        }
+        input:focus, select:focus, textarea:focus {
+          outline: none;
+          border-color: #58a6ff;
+        }
+        label { font-size: .875rem; color: #8b949e; display: block; margin-bottom: 4px; }
+        .field { margin-bottom: 12px; }
+        .badge {
+          display: inline-block;
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: .75rem;
+          color: #fff;
+          font-weight: 600;
+        }
+        .part-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 0;
+          border-bottom: 1px solid #21262d;
+        }
+        .part-row:last-child { border-bottom: none; }
+        .part-name { flex: 1; font-weight: 500; }
+        .part-meta { font-size: .8rem; color: #8b949e; }
+        .history-item {
+          padding: 8px 0;
+          border-bottom: 1px solid #21262d;
+          font-size: .85rem;
+          color: #8b949e;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-action { color: #e6edf3; font-weight: 500; }
+        .breadcrumb { font-size: .85rem; margin-bottom: 16px; color: #8b949e; }
+        .breadcrumb a { color: #58a6ff; }
+        .quick-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+        .quick-add .field { margin-bottom: 0; flex: 1; min-width: 120px; }
+        .photo-preview { max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 8px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 600px) {
+          .grid-2 { grid-template-columns: 1fr; }
+          .quick-add { flex-direction: column; }
+        }
+        .empty { color: #8b949e; font-size: .9rem; padding: 12px 0; }
+        .detail-field { margin-bottom: 8px; font-size: .9rem; }
+        .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
+        .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
+        .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
+      </style>
+      </head>
+      <body>
+        <header>
+          <h1><a href="/">🚁 FPV Inventory</a></h1>
+        </header>
+        <div class="container">
+        ${body}
+      </div>
+      </body>
+    </html>
+  `;
 }
 
 function fullAddForm(parentId?: number): string {
@@ -211,7 +229,9 @@ function fullAddForm(parentId?: number): string {
       </div>`;
   const title = parentId != null ? `Add Component to Assembly` : `Add Part`;
   const backLink = parentId != null ? `/parts/${parentId}` : "/";
-  return layout(title, `
+  return layout(
+    title,
+    `
     <div class="breadcrumb"><a href="${backLink}">← Back</a></div>
     <div class="card">
       <h2>${escape(title)}</h2>
@@ -258,7 +278,8 @@ function fullAddForm(parentId?: number): string {
         </div>
       </form>
     </div>
-  `);
+  `,
+  );
 }
 
 function quickAddForm(parentId?: number): string {
@@ -302,7 +323,9 @@ function quickAddForm(parentId?: number): string {
       </div>
       <div class="field" style="flex:none">
         <label>&nbsp;</label>
-        <a href="/parts/new${parentId != null ? `?parent_id=${parentId}` : ""}" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
+        <a href="/parts/new${
+    parentId != null ? `?parent_id=${parentId}` : ""
+  }" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
       </div>
     </div>
   </form>
@@ -341,14 +364,17 @@ function homePage(db: DB, typeFilter?: PartType): string {
   ${typeFilter ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
 </form>`;
 
-  return layout("Inventory", `
+  return layout(
+    "Inventory",
+    `
     ${quickAddForm()}
     <div class="card">
       <h2>Parts &amp; Assemblies</h2>
       ${filterBar}
       ${rows}
     </div>
-  `);
+  `,
+  );
 }
 
 async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
@@ -359,9 +385,7 @@ async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
     current = current.parent_id != null ? getPart(db, current.parent_id) : null;
   }
   const links = crumbs.map((c, i) =>
-    i === crumbs.length - 1
-      ? escape(c.name)
-      : `<a href="/parts/${c.id}">${escape(c.name)}</a>`
+    i === crumbs.length - 1 ? escape(c.name) : `<a href="/parts/${c.id}">${escape(c.name)}</a>`
   );
   return `<div class="breadcrumb"><a href="/">Home</a> › ${links.join(" › ")}</div>`;
 }
@@ -369,9 +393,7 @@ async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
 function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string {
   switch (entry.action) {
     case "created":
-      return entry.to_parent_id
-        ? `Added to assembly #${entry.to_parent_id}`
-        : "Added to inventory";
+      return entry.to_parent_id ? `Added to assembly #${entry.to_parent_id}` : "Added to inventory";
     case "updated":
       return entry.old_status !== entry.new_status
         ? `Status changed: ${entry.old_status} → ${entry.new_status}`
@@ -380,8 +402,12 @@ function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string
         : "Details updated";
     case "moved":
       return entry.to_parent_id
-        ? `Moved from #${entry.from_parent_id ?? "spare parts"} to assembly #${entry.to_parent_id}${entry.notes ? ` — ${escape(entry.notes)}` : ""}`
-        : `Removed from assembly #${entry.from_parent_id}${entry.notes ? ` — ${escape(entry.notes)}` : ""}`;
+        ? `Moved from #${entry.from_parent_id ?? "spare parts"} to assembly #${entry.to_parent_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`
+        : `Removed from assembly #${entry.from_parent_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`;
     default:
       return escape(entry.action);
   }
@@ -408,7 +434,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
     <div class="history-item">
       <span class="history-action">${escape(h.action)}</span>
       — ${historyDescription(h)}
-      <span style="float:right;font-size:.75rem">${h.created_at.replace("T", " ").slice(0, 16)}</span>
+      <span style="float:right;font-size:.75rem">${
+    h.created_at.replace("T", " ").slice(0, 16)
+  }</span>
     </div>
   `).join("");
 
@@ -418,7 +446,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
 
   const currentParentId = part.parent_id;
 
-  return layout(part.name, `
+  return layout(
+    part.name,
+    `
     ${breadcrumb}
 
     <div class="grid-2">
@@ -441,9 +471,25 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <span class="label">Quantity</span>
           ${escape(part.quantity)}
         </div>
-        ${part.notes ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>` : ""}
-        ${part.specs ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${escape(part.specs)}</pre></div>` : ""}
-        ${part.parent_id != null ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)}</a></div>` : ""}
+        ${
+      part.notes
+        ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>`
+        : ""
+    }
+        ${
+      part.specs
+        ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${
+          escape(part.specs)
+        }</pre></div>`
+        : ""
+    }
+        ${
+      part.parent_id != null
+        ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${
+          escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)
+        }</a></div>`
+        : ""
+    }
 
         <hr style="border-color:#30363d;margin:12px 0">
 
@@ -451,9 +497,13 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <div class="field">
             <label>Status</label>
             <select name="status">
-              ${(["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
-                .map((s) => `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`)
-                .join("")}
+              ${
+      (["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
+        .map((s) =>
+          `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`
+        )
+        .join("")
+    }
             </select>
           </div>
           <div class="field">
@@ -472,7 +522,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           </div>
           <div class="field">
             <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
-            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${escape(part.specs ?? "")}</textarea>
+            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${
+      escape(part.specs ?? "")
+    }</textarea>
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
         </form>
@@ -483,7 +535,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <div class="field">
             <label>Move to assembly (or spare parts)</label>
             <select name="new_parent_id">
-              <option value=""${currentParentId == null ? " selected" : ""}>(spare parts / top-level)</option>
+              <option value=""${
+      currentParentId == null ? " selected" : ""
+    }>(spare parts / top-level)</option>
               ${parentOptions}
             </select>
           </div>
@@ -519,7 +573,8 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
     </div>
 
     ${quickAddForm(id)}
-  `);
+  `,
+  );
 }
 
 export function makeHandler(db: DB) {
@@ -681,7 +736,11 @@ export function makeHandler(db: DB) {
       try {
         const bytes = await Deno.readFile(`${PHOTOS_DIR}/${filename}`);
         const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
-        const contentType = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
+        const contentType = ext === "png"
+          ? "image/png"
+          : ext === "gif"
+          ? "image/gif"
+          : "image/jpeg";
         return new Response(bytes, { headers: { "Content-Type": contentType } });
       } catch {
         return new Response("Not Found", { status: 404 });
@@ -692,7 +751,9 @@ export function makeHandler(db: DB) {
   };
 }
 
-function withLogging(handler: (req: Request) => Promise<Response>): (req: Request) => Promise<Response> {
+function withLogging(
+  handler: (req: Request) => Promise<Response>,
+): (req: Request) => Promise<Response> {
   return async (req: Request) => {
     const start = Date.now();
     const { method } = req;

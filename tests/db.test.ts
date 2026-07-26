@@ -1,5 +1,14 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { initDb, createPart, getPart, listParts, updatePart, movePart, getPartHistory, runMigrations } from "../db.ts";
+import {
+  createPart,
+  getPart,
+  getPartHistory,
+  initDb,
+  listParts,
+  movePart,
+  runMigrations,
+  updatePart,
+} from "../db.ts";
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 
 function makeTempDb(): DB {
@@ -9,7 +18,7 @@ function makeTempDb(): DB {
 Deno.test("initDb creates parts and part_history tables", () => {
   const db = makeTempDb();
   const tables = db.query<[string]>(
-    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
   ).map(([name]) => name);
   assertEquals(tables.includes("parts"), true);
   assertEquals(tables.includes("part_history"), true);
@@ -102,7 +111,12 @@ Deno.test("movePart changes parent_id and records history", () => {
   const db = makeTempDb();
   const quad1Id = createPart(db, { name: "Quad 1", quantity: 1, status: "in-use" });
   const quad2Id = createPart(db, { name: "Quad 2", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quad1Id });
+  const motorId = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "in-use",
+    parent_id: quad1Id,
+  });
   movePart(db, motorId, quad2Id, "Salvaged from Quad 1");
   const motor = getPart(db, motorId);
   assertEquals(motor!.parent_id, quad2Id);
@@ -118,7 +132,12 @@ Deno.test("movePart changes parent_id and records history", () => {
 Deno.test("movePart to null removes from assembly (to spare parts)", () => {
   const db = makeTempDb();
   const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const motorId = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "in-use",
+    parent_id: quadId,
+  });
   movePart(db, motorId, null, "Removed from quad");
   const motor = getPart(db, motorId);
   assertEquals(motor!.parent_id, null);
@@ -338,8 +357,8 @@ Deno.test("runMigrations adds missing type and specs columns to existing parts t
   runMigrations(db);
 
   const columns = db.query<[number, string, string, number, string | null, number]>(
-    "PRAGMA table_info(parts)"
-  ).map(row => row[1]);
+    "PRAGMA table_info(parts)",
+  ).map((row) => row[1]);
   assertEquals(columns.includes("type"), true);
   assertEquals(columns.includes("specs"), true);
 
@@ -392,8 +411,8 @@ Deno.test("runMigrations adds missing gear columns to existing parts table", () 
   runMigrations(db);
 
   const columns = db.query<[number, string, string, number, string | null, number]>(
-    "PRAGMA table_info(parts)"
-  ).map(row => row[1]);
+    "PRAGMA table_info(parts)",
+  ).map((row) => row[1]);
   assertEquals(columns.includes("serial_number"), true);
   assertEquals(columns.includes("warranty_expiry"), true);
   assertEquals(columns.includes("purchase_date"), true);
@@ -410,7 +429,13 @@ Deno.test("initDb run twice on the same file is idempotent", async () => {
   const path = await Deno.makeTempFile({ suffix: ".db" });
   try {
     const db1 = initDb(path);
-    const id = createPart(db1, { name: "Goggles", quantity: 1, status: "unused", type: "gear", serial_number: "SN-1" });
+    const id = createPart(db1, {
+      name: "Goggles",
+      quantity: 1,
+      status: "unused",
+      type: "gear",
+      serial_number: "SN-1",
+    });
     db1.close();
 
     const db2 = initDb(path);

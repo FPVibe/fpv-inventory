@@ -85,7 +85,12 @@ Deno.test("GET /api/parts?type=<invalid> returns [] even if the DB contains that
   const { db, handler } = makeApp();
   // Legacy/corrupt data: main.ts's form handlers cast arbitrary strings to PartType
   // without validation, so a row like this can exist in the wild.
-  createPart(db, { name: "Weird Part", quantity: 1, status: "unused", type: "not-a-real-type" as PartType });
+  createPart(db, {
+    name: "Weird Part",
+    quantity: 1,
+    status: "unused",
+    type: "not-a-real-type" as PartType,
+  });
   const res = await handler(new Request("http://localhost/api/parts?type=not-a-real-type"));
   assertEquals(await res.json(), []);
 });
