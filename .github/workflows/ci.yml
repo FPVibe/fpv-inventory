@@ -14,5 +14,8 @@ jobs:
         with:
           deno-version: v2.x
 
+      - name: Check formatting
+        run: deno fmt --check
+
       - name: Run tests
         run: deno test --allow-all
