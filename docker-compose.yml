@@ -1,6 +1,6 @@
 services:
   fpv-inventory:
-    image: ghcr.io/cori/fpv-inventory:sha-7161e58
+    image: ghcr.io/cori/fpv-inventory:sha-4745429
     ports:
       - "8000:8000"
     volumes:
