@@ -210,7 +210,13 @@ Deno.test("GET /api/builds returns [] for an empty DB", async () => {
 Deno.test("GET /api/builds returns only top-level crafts", async () => {
   const { db, handler } = makeApp();
   const craftId = createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
-  createPart(db, { name: "0702 Motor", quantity: 4, status: "in-use", type: "motor", parent_id: craftId });
+  createPart(db, {
+    name: "0702 Motor",
+    quantity: 4,
+    status: "in-use",
+    type: "motor",
+    parent_id: craftId,
+  });
   createPart(db, { name: "Loose Frame", quantity: 1, status: "unused", type: "frame" });
   const res = await handler(new Request("http://localhost/api/builds"));
   const body = await res.json();
@@ -220,7 +226,12 @@ Deno.test("GET /api/builds returns only top-level crafts", async () => {
 
 Deno.test("GET /api/builds excludes crafts nested inside another craft", async () => {
   const { db, handler } = makeApp();
-  const parentId = createPart(db, { name: "Salvage Bin", quantity: 1, status: "in-use", type: "craft" });
+  const parentId = createPart(db, {
+    name: "Salvage Bin",
+    quantity: 1,
+    status: "in-use",
+    type: "craft",
+  });
   createPart(db, {
     name: "Retired Whoop",
     quantity: 1,
@@ -297,7 +308,12 @@ Deno.test("GET /api/builds/:id returns the build with its children", async () =>
 
 Deno.test("GET /api/builds/:id returns children: [] for a build with none", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, { name: "Empty Frame", quantity: 1, status: "unused", type: "craft" });
+  const craftId = createPart(db, {
+    name: "Empty Frame",
+    quantity: 1,
+    status: "unused",
+    type: "craft",
+  });
   const res = await handler(new Request(`http://localhost/api/builds/${craftId}`));
   const body = await res.json();
   assertEquals(body.children, []);
@@ -305,7 +321,12 @@ Deno.test("GET /api/builds/:id returns children: [] for a build with none", asyn
 
 Deno.test("GET /api/builds/:id returns 404 for a non-craft part id", async () => {
   const { db, handler } = makeApp();
-  const motorId = createPart(db, { name: "Loose Motor", quantity: 1, status: "unused", type: "motor" });
+  const motorId = createPart(db, {
+    name: "Loose Motor",
+    quantity: 1,
+    status: "unused",
+    type: "motor",
+  });
   const res = await handler(new Request(`http://localhost/api/builds/${motorId}`));
   assertEquals(res.status, 404);
   const body = await res.json();
@@ -314,7 +335,12 @@ Deno.test("GET /api/builds/:id returns 404 for a non-craft part id", async () =>
 
 Deno.test("GET /api/builds/:id returns 404 for a craft that isn't top-level", async () => {
   const { db, handler } = makeApp();
-  const parentId = createPart(db, { name: "Salvage Bin", quantity: 1, status: "in-use", type: "craft" });
+  const parentId = createPart(db, {
+    name: "Salvage Bin",
+    quantity: 1,
+    status: "in-use",
+    type: "craft",
+  });
   const nestedId = createPart(db, {
     name: "Retired Whoop",
     quantity: 1,

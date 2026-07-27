@@ -383,6 +383,37 @@ export function movePart(db: DB, id: number, newParentId: number | null, notes?:
   );
 }
 
+export interface BuildChild {
+  id: number;
+  name: string;
+  type: PartType | null;
+  status: PartStatus;
+  quantity: number;
+  specs: string | null;
+  notes: string | null;
+}
+
+export interface Build extends Part {
+  children: BuildChild[];
+}
+
+export function getBuild(db: DB, id: number): Build | null {
+  const part = getPart(db, id);
+  if (!part || part.type !== "craft" || part.parent_id !== null) return null;
+  const children = listParts(db, { parent_id: id }).map(
+    ({ id, name, type, status, quantity, specs, notes }) => ({
+      id,
+      name,
+      type,
+      status,
+      quantity,
+      specs,
+      notes,
+    }),
+  );
+  return { ...part, children };
+}
+
 export function getPartHistory(db: DB, partId: number): HistoryEntry[] {
   const rows = db.query<
     [
