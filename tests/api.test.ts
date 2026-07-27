@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { createPart, initDb, type PartStatus, type PartType } from "../db.ts";
 import { makeHandler } from "../main.ts";
 import { VERSION } from "../version.ts";
@@ -195,4 +195,170 @@ Deno.test("GET /api/parts/:id returns 404 JSON error when missing", async () => 
   assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
   const body = await res.json();
   assertEquals(body.error, "Part not found");
+});
+
+// ─── GET /api/builds ────────────────────────────────────────────────────────
+
+Deno.test("GET /api/builds returns [] for an empty DB", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/api/builds"));
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
+  assertEquals(await res.json(), []);
+});
+
+Deno.test("GET /api/builds returns only top-level crafts", async () => {
+  const { db, handler } = makeApp();
+  const craftId = createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
+  createPart(db, {
+    name: "0702 Motor",
+    quantity: 4,
+    status: "in-use",
+    type: "motor",
+    parent_id: craftId,
+  });
+  createPart(db, { name: "Loose Frame", quantity: 1, status: "unused", type: "frame" });
+  const res = await handler(new Request("http://localhost/api/builds"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "LionBee");
+});
+
+Deno.test("GET /api/builds excludes crafts nested inside another craft", async () => {
+  const { db, handler } = makeApp();
+  const parentId = createPart(db, {
+    name: "Salvage Bin",
+    quantity: 1,
+    status: "in-use",
+    type: "craft",
+  });
+  createPart(db, {
+    name: "Retired Whoop",
+    quantity: 1,
+    status: "retired",
+    type: "craft",
+    parent_id: parentId,
+  });
+  const res = await handler(new Request("http://localhost/api/builds"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "Salvage Bin");
+});
+
+Deno.test("GET /api/builds filters by status", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
+  createPart(db, { name: "Old Toothpick", quantity: 1, status: "retired", type: "craft" });
+  const res = await handler(new Request("http://localhost/api/builds?status=retired"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "Old Toothpick");
+});
+
+Deno.test("GET /api/builds?status=<invalid> returns [] not an error", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
+  const res = await handler(new Request("http://localhost/api/builds?status=not-a-real-status"));
+  assertEquals(res.status, 200);
+  assertEquals(await res.json(), []);
+});
+
+Deno.test("GET /api/builds?q= matches case-insensitive substring of name", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
+  createPart(db, { name: "Toothpick", quantity: 1, status: "in-use", type: "craft" });
+  const res = await handler(new Request("http://localhost/api/builds?q=lion"));
+  const body = await res.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].name, "LionBee");
+});
+
+// ─── GET /api/builds/:id ──────────────────────────────────────────────────────
+
+Deno.test("GET /api/builds/:id returns the build with its children", async () => {
+  const { db, handler } = makeApp();
+  const craftId = createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
+  createPart(db, {
+    name: "0702 Motor",
+    quantity: 4,
+    status: "in-use",
+    type: "motor",
+    parent_id: craftId,
+    specs: "KV: 19000",
+    notes: "stock motors",
+  });
+  const res = await handler(new Request(`http://localhost/api/builds/${craftId}`));
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.id, craftId);
+  assertEquals(body.name, "LionBee");
+  assertExists(body.created_at);
+  assertExists(body.updated_at);
+  assertEquals(body.children.length, 1);
+  assertEquals(body.children[0], {
+    id: body.children[0].id,
+    name: "0702 Motor",
+    type: "motor",
+    status: "in-use",
+    quantity: 4,
+    specs: "KV: 19000",
+    notes: "stock motors",
+  });
+});
+
+Deno.test("GET /api/builds/:id returns children: [] for a build with none", async () => {
+  const { db, handler } = makeApp();
+  const craftId = createPart(db, {
+    name: "Empty Frame",
+    quantity: 1,
+    status: "unused",
+    type: "craft",
+  });
+  const res = await handler(new Request(`http://localhost/api/builds/${craftId}`));
+  const body = await res.json();
+  assertEquals(body.children, []);
+});
+
+Deno.test("GET /api/builds/:id returns 404 for a non-craft part id", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, {
+    name: "Loose Motor",
+    quantity: 1,
+    status: "unused",
+    type: "motor",
+  });
+  const res = await handler(new Request(`http://localhost/api/builds/${motorId}`));
+  assertEquals(res.status, 404);
+  const body = await res.json();
+  assertEquals(body.error, "Build not found");
+});
+
+Deno.test("GET /api/builds/:id returns 404 for a craft that isn't top-level", async () => {
+  const { db, handler } = makeApp();
+  const parentId = createPart(db, {
+    name: "Salvage Bin",
+    quantity: 1,
+    status: "in-use",
+    type: "craft",
+  });
+  const nestedId = createPart(db, {
+    name: "Retired Whoop",
+    quantity: 1,
+    status: "retired",
+    type: "craft",
+    parent_id: parentId,
+  });
+  const res = await handler(new Request(`http://localhost/api/builds/${nestedId}`));
+  assertEquals(res.status, 404);
+  const body = await res.json();
+  assertEquals(body.error, "Build not found");
+});
+
+Deno.test("GET /api/builds/:id returns 404 JSON error when missing", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/api/builds/999999"));
+  assertEquals(res.status, 404);
+  assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
+  const body = await res.json();
+  assertEquals(body.error, "Build not found");
 });

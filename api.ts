@@ -1,5 +1,6 @@
 import {
   DB,
+  getBuild,
   getPart,
   getPartHistory,
   listParts,
@@ -85,6 +86,28 @@ export function handleApi(db: DB, req: Request, url: URL): Response | null {
     if (!part) return errorResponse("Part not found", 404);
     const history = getPartHistory(db, id);
     return json({ ...part, history });
+  }
+
+  if (path === "/api/builds" && req.method === "GET") {
+    const filter: PartFilter = { type: "craft", parent_id: null };
+    const status = url.searchParams.get("status");
+    const q = url.searchParams.get("q");
+
+    if (status !== null) {
+      if (!isPartStatus(status)) return json([]);
+      filter.status = status;
+    }
+    if (q !== null) filter.q = q;
+
+    return json(listParts(db, filter));
+  }
+
+  const buildDetailMatch = path.match(/^\/api\/builds\/(\d+)$/);
+  if (buildDetailMatch && req.method === "GET") {
+    const id = parseInt(buildDetailMatch[1], 10);
+    const build = getBuild(db, id);
+    if (!build) return errorResponse("Build not found", 404);
+    return json(build);
   }
 
   return errorResponse("Not found", 404);
