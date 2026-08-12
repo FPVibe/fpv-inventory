@@ -178,7 +178,19 @@
     "schemas": {
       "PartType": {
         "type": "string",
-        "enum": ["motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "gear", "other"],
+        "enum": [
+          "motor",
+          "fc",
+          "esc",
+          "vtx",
+          "frame",
+          "camera",
+          "antenna",
+          "battery",
+          "craft",
+          "gear",
+          "other"
+        ],
         "description": "Part type category"
       },
       "PartStatus": {

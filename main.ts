@@ -512,26 +512,35 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         : ""
     }
         ${
-      part.serial_number || part.purchase_date || part.warranty_expiry || part.purchase_price != null
+      part.serial_number || part.purchase_date || part.warranty_expiry ||
+        part.purchase_price != null
         ? `<hr style="border-color:#30363d;margin:12px 0">
            ${
           part.serial_number
-            ? `<div class="detail-field"><span class="label">Serial</span>${escape(part.serial_number)}</div>`
+            ? `<div class="detail-field"><span class="label">Serial</span>${
+              escape(part.serial_number)
+            }</div>`
             : ""
         }
            ${
           part.purchase_date
-            ? `<div class="detail-field"><span class="label">Purchased</span>${escape(part.purchase_date)}</div>`
+            ? `<div class="detail-field"><span class="label">Purchased</span>${
+              escape(part.purchase_date)
+            }</div>`
             : ""
         }
            ${
           part.purchase_price != null
-            ? `<div class="detail-field"><span class="label">Price</span>${escape(String(part.purchase_price))}</div>`
+            ? `<div class="detail-field"><span class="label">Price</span>${
+              escape(String(part.purchase_price))
+            }</div>`
             : ""
         }
            ${
           part.warranty_expiry
-            ? `<div class="detail-field"><span class="label">Warranty</span>${escape(part.warranty_expiry)}</div>`
+            ? `<div class="detail-field"><span class="label">Warranty</span>${
+              escape(part.warranty_expiry)
+            }</div>`
             : ""
         }`
         : ""
@@ -585,7 +594,9 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
             </div>
             <div class="field">
               <label>Warranty Expiry</label>
-              <input type="date" name="warranty_expiry" value="${escape(part.warranty_expiry ?? "")}">
+              <input type="date" name="warranty_expiry" value="${
+      escape(part.warranty_expiry ?? "")
+    }">
             </div>
           </div>
           <div class="field">
