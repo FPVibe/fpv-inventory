@@ -105,8 +105,8 @@ jobs:
         run: |
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          # Update config.json: bump tipi_version and set version
-          jq --arg version "$VERSION" \
+          # Update config.json: bump tipi_version and set version (use sha- prefix to match image tag)
+          jq --arg version "sha-$VERSION" \
              --argjson tipi_version "$(jq '.tipi_version + 1' apps/fpv-inventory/config.json)" \
              '.version = $version | .tipi_version = $tipi_version' \
              apps/fpv-inventory/config.json > apps/fpv-inventory/config.json.tmp && \

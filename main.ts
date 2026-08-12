@@ -771,7 +771,8 @@ export function makeHandler(db: DB) {
       const form = await req.formData();
       const status = form.get("status")?.toString() as PartStatus | undefined;
       const quantityStr = form.get("quantity")?.toString();
-      const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
+      const quantityInt = quantityStr != null ? parseInt(quantityStr, 10) : NaN;
+      const quantity = !isNaN(quantityInt) ? quantityInt : undefined;
       // Only include fields that use key-presence guards in updatePart when they
       // are actually present in the form, to avoid clearing existing values on
       // submissions from older form layouts that omit these fields.
