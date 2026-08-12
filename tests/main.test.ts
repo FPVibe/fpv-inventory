@@ -72,6 +72,7 @@ Deno.test("POST /parts/:id/update persists serial_number; empty price/date clear
   });
   const form = new FormData();
   form.set("status", "in-use");
+  form.set("type", "gear");
   form.set("quantity", "1");
   form.set("serial_number", "GP-XXXXXXXXXXX");
   form.set("warranty_expiry", "");
@@ -82,6 +83,7 @@ Deno.test("POST /parts/:id/update persists serial_number; empty price/date clear
   );
   assertEquals(res.status, 303);
   const part = getPart(db, id);
+  assertEquals(part?.type, "gear");
   assertEquals(part?.serial_number, "GP-XXXXXXXXXXX");
   assertEquals(part?.warranty_expiry, null);
   assertEquals(part?.purchase_price, null);
@@ -101,5 +103,5 @@ Deno.test("part detail page displays serial_number and purchase_price when set",
   const res = await handler(new Request(`http://localhost/parts/${id}`));
   const html = await res.text();
   assertStringIncludes(html, "GP-ABC123");
-  assertStringIncludes(html, "299.99");
+  assertStringIncludes(html, "299.99"); // toFixed(2) → "299.99"
 });

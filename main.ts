@@ -532,7 +532,7 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
            ${
           part.purchase_price != null
             ? `<div class="detail-field"><span class="label">Price</span>${
-              escape(String(part.purchase_price))
+              escape(Number(part.purchase_price).toFixed(2))
             }</div>`
             : ""
         }
@@ -770,12 +770,21 @@ export function makeHandler(db: DB) {
       if (!part) return new Response("Not Found", { status: 404 });
       const form = await req.formData();
       const status = form.get("status")?.toString() as PartStatus | undefined;
-      const typeStr = form.get("type")?.toString();
-      const type = typeStr !== undefined ? (typeStr || null) as PartType | null : undefined;
-      const notes = form.get("notes")?.toString();
-      const specs = form.get("specs")?.toString();
       const quantityStr = form.get("quantity")?.toString();
       const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
+      // Only include fields that use key-presence guards in updatePart when they
+      // are actually present in the form, to avoid clearing existing values on
+      // submissions from older form layouts that omit these fields.
+      const formFields: {
+        type?: PartType | null;
+        notes?: string;
+        specs?: string;
+      } = {};
+      if (form.has("type")) {
+        formFields.type = (form.get("type")!.toString() || null) as PartType | null;
+      }
+      if (form.has("notes")) formFields.notes = form.get("notes")!.toString();
+      if (form.has("specs")) formFields.specs = form.get("specs")!.toString();
       // Gear / procurement fields — only include in update when present in the form
       // to avoid clearing values on old form submissions that lack these fields.
       const gearFields: {
@@ -798,7 +807,7 @@ export function makeHandler(db: DB) {
         gearFields.purchase_price = ppStr && !isNaN(parseFloat(ppStr)) ? parseFloat(ppStr) : null;
       }
       try {
-        updatePart(db, id, { status, type, notes, specs, quantity, ...gearFields });
+        updatePart(db, id, { status, quantity, ...formFields, ...gearFields });
       } catch (err) {
         console.error("Failed to update part:", err);
         return new Response("Failed to update part", { status: 500 });

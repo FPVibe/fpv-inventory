@@ -44,7 +44,15 @@
         "tags": ["meta"],
         "responses": {
           "200": {
-            "description": "OpenAPI 3.1 document"
+            "description": "OpenAPI 3.1 document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "OpenAPI 3.1.0 specification object"
+                }
+              }
+            }
           }
         }
       }

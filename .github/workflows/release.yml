@@ -85,6 +85,8 @@ jobs:
 
   update-appstore:
     needs: docker
+    # Skip gracefully when the PAT secret is absent (forks, contributor PRs, etc.)
+    if: ${{ secrets.RTAPPSTORE_PAT != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -116,11 +118,11 @@ jobs:
 
           echo "tipi_version=$(jq -r '.tipi_version' apps/fpv-inventory/config.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Validate with bun test
         run: |
-          curl -fsSL https://bun.sh/install | bash
-          export BUN_INSTALL="$HOME/.bun"
-          export PATH="$BUN_INSTALL/bin:$PATH"
           bun install
           bun test
 
