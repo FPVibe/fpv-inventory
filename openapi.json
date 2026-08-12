@@ -1,0 +1,312 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "fpv-inventory",
+    "version": "1.0.0",
+    "description": "FPV quad parts, builds, and gear inventory API — part of the FPVibe federation of tools."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local / self-hosted (Runtipi)"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check",
+        "tags": ["meta"],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status", "version", "name"],
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "version": { "type": "string", "example": "1.0.0" },
+                    "name": { "type": "string", "example": "fpv-inventory" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "operationId": "getOpenApiSpec",
+        "summary": "OpenAPI spec (this document)",
+        "tags": ["meta"],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document"
+          }
+        }
+      }
+    },
+    "/api/parts": {
+      "get": {
+        "operationId": "listParts",
+        "summary": "List inventory parts",
+        "description": "Returns all parts matching the given filters. Unknown type or status values return an empty array rather than an error.",
+        "tags": ["parts"],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by part type",
+            "schema": { "$ref": "#/components/schemas/PartType" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by status",
+            "schema": { "$ref": "#/components/schemas/PartStatus" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring search on name",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "description": "Filter by parent assembly ID. Use 0 to get top-level parts (parent_id IS NULL). Negative or non-integer values are ignored.",
+            "schema": { "type": "integer", "minimum": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of matching parts (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Part" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parts/{id}": {
+      "get": {
+        "operationId": "getPart",
+        "summary": "Get part with history",
+        "tags": ["parts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Part with full history",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PartWithHistory" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/builds": {
+      "get": {
+        "operationId": "listBuilds",
+        "summary": "List builds",
+        "description": "Returns top-level parts with type=craft. Nested crafts (parent_id set) are excluded.",
+        "tags": ["builds"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/PartStatus" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring search on name",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of build parts (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Part" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/builds/{id}": {
+      "get": {
+        "operationId": "getBuild",
+        "summary": "Get build with components",
+        "description": "Returns a top-level craft part with its direct children. 404 if the id belongs to a non-craft part or a nested craft.",
+        "tags": ["builds"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Build part with children",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Build" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PartType": {
+        "type": "string",
+        "enum": ["motor", "fc", "esc", "vtx", "frame", "camera", "antenna", "battery", "craft", "gear", "other"],
+        "description": "Part type category"
+      },
+      "PartStatus": {
+        "type": "string",
+        "enum": ["unused", "in-use", "broken", "retired", "lost"],
+        "description": "Lifecycle status of the part"
+      },
+      "Part": {
+        "type": "object",
+        "required": ["id", "name", "status", "quantity", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/PartStatus" },
+          "type": {
+            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }],
+            "description": "Null if not categorised"
+          },
+          "notes": { "type": ["string", "null"] },
+          "specs": {
+            "type": ["string", "null"],
+            "description": "Free-form spec block from product listing"
+          },
+          "quantity": { "type": "integer", "minimum": 0 },
+          "parent_id": {
+            "type": ["integer", "null"],
+            "description": "ID of parent assembly; null for top-level parts"
+          },
+          "photo_path": {
+            "type": ["string", "null"],
+            "description": "Filename relative to PHOTOS_DIR"
+          },
+          "serial_number": { "type": ["string", "null"] },
+          "warranty_expiry": {
+            "type": ["string", "null"],
+            "format": "date",
+            "description": "ISO 8601 date (YYYY-MM-DD)"
+          },
+          "purchase_date": { "type": ["string", "null"], "format": "date" },
+          "purchase_price": {
+            "type": ["number", "null"],
+            "description": "Purchase price in the user's local currency"
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HistoryEntry": {
+        "type": "object",
+        "required": ["id", "part_id", "action", "created_at"],
+        "properties": {
+          "id": { "type": "integer" },
+          "part_id": { "type": "integer" },
+          "action": {
+            "type": "string",
+            "enum": ["created", "updated", "moved"]
+          },
+          "from_parent_id": { "type": ["integer", "null"] },
+          "to_parent_id": { "type": ["integer", "null"] },
+          "old_status": { "type": ["string", "null"] },
+          "new_status": { "type": ["string", "null"] },
+          "quantity_delta": { "type": ["integer", "null"] },
+          "notes": { "type": ["string", "null"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PartWithHistory": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Part" },
+          {
+            "type": "object",
+            "required": ["history"],
+            "properties": {
+              "history": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/HistoryEntry" }
+              }
+            }
+          }
+        ]
+      },
+      "BuildChild": {
+        "type": "object",
+        "required": ["id", "name", "status", "quantity"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": {
+            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }]
+          },
+          "status": { "$ref": "#/components/schemas/PartStatus" },
+          "quantity": { "type": "integer" },
+          "specs": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] }
+        }
+      },
+      "Build": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Part" },
+          {
+            "type": "object",
+            "required": ["children"],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/BuildChild" },
+                "description": "Direct child components of this build"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["error"],
+              "properties": {
+                "error": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
