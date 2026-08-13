@@ -31,7 +31,7 @@ jobs:
       packages: write
     outputs:
       short_sha: ${{ steps.version.outputs.short_sha }}
-      has_rtappstore_pat: ${{ steps.check-pat.outputs.has_pat }}
+      has_rtappstore_pat: ${{ steps.check_pat.outputs.has_pat }}
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Check RTAPPSTORE_PAT availability
-        id: check-pat
+        id: check_pat
         run: echo "has_pat=${{ secrets.RTAPPSTORE_PAT != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
