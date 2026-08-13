@@ -83,6 +83,7 @@ const ALL_TYPES = [
   "antenna",
   "battery",
   "craft",
+  "gear",
   "other",
 ] as PartType[];
 
@@ -271,6 +272,26 @@ function fullAddForm(parentId?: number): string {
         <div class="field">
           <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
           <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W"></textarea>
+        </div>
+        <hr style="border-color:#30363d;margin:12px 0">
+        <p style="font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Procurement (optional)</p>
+        <div class="field">
+          <label>Serial Number</label>
+          <input name="serial_number" placeholder="e.g. SN-1234567">
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>Purchase Date</label>
+            <input type="date" name="purchase_date">
+          </div>
+          <div class="field">
+            <label>Warranty Expiry</label>
+            <input type="date" name="warranty_expiry">
+          </div>
+        </div>
+        <div class="field">
+          <label>Purchase Price</label>
+          <input type="number" step="0.01" min="0" name="purchase_price" placeholder="0.00" style="max-width:160px">
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button type="submit" class="btn btn-primary">Save Part</button>
@@ -490,6 +511,40 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         }</a></div>`
         : ""
     }
+        ${
+      part.serial_number || part.purchase_date || part.warranty_expiry ||
+        part.purchase_price != null
+        ? `<hr style="border-color:#30363d;margin:12px 0">
+           ${
+          part.serial_number
+            ? `<div class="detail-field"><span class="label">Serial</span>${
+              escape(part.serial_number)
+            }</div>`
+            : ""
+        }
+           ${
+          part.purchase_date
+            ? `<div class="detail-field"><span class="label">Purchased</span>${
+              escape(part.purchase_date)
+            }</div>`
+            : ""
+        }
+           ${
+          part.purchase_price != null
+            ? `<div class="detail-field"><span class="label">Price</span>${
+              escape(Number(part.purchase_price).toFixed(2))
+            }</div>`
+            : ""
+        }
+           ${
+          part.warranty_expiry
+            ? `<div class="detail-field"><span class="label">Warranty</span>${
+              escape(part.warranty_expiry)
+            }</div>`
+            : ""
+        }`
+        : ""
+    }
 
         <hr style="border-color:#30363d;margin:12px 0">
 
@@ -525,6 +580,30 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
             <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${
       escape(part.specs ?? "")
     }</textarea>
+          </div>
+          <hr style="border-color:#30363d;margin:12px 0">
+          <p style="font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Procurement</p>
+          <div class="field">
+            <label>Serial Number</label>
+            <input name="serial_number" value="${escape(part.serial_number ?? "")}">
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label>Purchase Date</label>
+              <input type="date" name="purchase_date" value="${escape(part.purchase_date ?? "")}">
+            </div>
+            <div class="field">
+              <label>Warranty Expiry</label>
+              <input type="date" name="warranty_expiry" value="${
+      escape(part.warranty_expiry ?? "")
+    }">
+            </div>
+          </div>
+          <div class="field">
+            <label>Purchase Price</label>
+            <input type="number" step="0.01" min="0" name="purchase_price"
+              value="${escape(part.purchase_price != null ? String(part.purchase_price) : "")}"
+              style="max-width:160px">
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
         </form>
@@ -646,10 +725,27 @@ export function makeHandler(db: DB) {
       const parentIdStr = form.get("parent_id")?.toString();
       const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
       const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
+      const serial_number = form.get("serial_number")?.toString().trim() || null;
+      const warranty_expiry = form.get("warranty_expiry")?.toString() || null;
+      const purchase_date = form.get("purchase_date")?.toString() || null;
+      const ppStr = form.get("purchase_price")?.toString().trim();
+      const purchase_price = ppStr && !isNaN(parseFloat(ppStr)) ? parseFloat(ppStr) : null;
 
       let newId: number;
       try {
-        newId = createPart(db, { name, quantity, status, type, notes, specs, parent_id });
+        newId = createPart(db, {
+          name,
+          quantity,
+          status,
+          type,
+          notes,
+          specs,
+          parent_id,
+          serial_number,
+          warranty_expiry,
+          purchase_date,
+          purchase_price,
+        });
       } catch (err) {
         console.error("Failed to create part:", err);
         return new Response("Failed to create part", { status: 500 });
@@ -674,14 +770,45 @@ export function makeHandler(db: DB) {
       if (!part) return new Response("Not Found", { status: 404 });
       const form = await req.formData();
       const status = form.get("status")?.toString() as PartStatus | undefined;
-      const typeStr = form.get("type")?.toString();
-      const type = typeStr !== undefined ? (typeStr || null) as PartType | null : undefined;
-      const notes = form.get("notes")?.toString();
-      const specs = form.get("specs")?.toString();
       const quantityStr = form.get("quantity")?.toString();
-      const quantity = quantityStr != null ? parseInt(quantityStr, 10) : undefined;
+      const quantityInt = quantityStr != null ? parseInt(quantityStr, 10) : NaN;
+      const quantity = !isNaN(quantityInt) ? quantityInt : undefined;
+      // Only include fields that use key-presence guards in updatePart when they
+      // are actually present in the form, to avoid clearing existing values on
+      // submissions from older form layouts that omit these fields.
+      const formFields: {
+        type?: PartType | null;
+        notes?: string;
+        specs?: string;
+      } = {};
+      if (form.has("type")) {
+        formFields.type = (form.get("type")!.toString() || null) as PartType | null;
+      }
+      if (form.has("notes")) formFields.notes = form.get("notes")!.toString();
+      if (form.has("specs")) formFields.specs = form.get("specs")!.toString();
+      // Gear / procurement fields — only include in update when present in the form
+      // to avoid clearing values on old form submissions that lack these fields.
+      const gearFields: {
+        serial_number?: string | null;
+        warranty_expiry?: string | null;
+        purchase_date?: string | null;
+        purchase_price?: number | null;
+      } = {};
+      if (form.has("serial_number")) {
+        gearFields.serial_number = form.get("serial_number")!.toString().trim() || null;
+      }
+      if (form.has("warranty_expiry")) {
+        gearFields.warranty_expiry = form.get("warranty_expiry")!.toString() || null;
+      }
+      if (form.has("purchase_date")) {
+        gearFields.purchase_date = form.get("purchase_date")!.toString() || null;
+      }
+      if (form.has("purchase_price")) {
+        const ppStr = form.get("purchase_price")!.toString().trim();
+        gearFields.purchase_price = ppStr && !isNaN(parseFloat(ppStr)) ? parseFloat(ppStr) : null;
+      }
       try {
-        updatePart(db, id, { status, type, notes, specs, quantity });
+        updatePart(db, id, { status, quantity, ...formFields, ...gearFields });
       } catch (err) {
         console.error("Failed to update part:", err);
         return new Response("Failed to update part", { status: 500 });

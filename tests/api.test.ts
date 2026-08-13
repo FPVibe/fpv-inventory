@@ -362,3 +362,20 @@ Deno.test("GET /api/builds/:id returns 404 JSON error when missing", async () =>
   const body = await res.json();
   assertEquals(body.error, "Build not found");
 });
+
+// ─── GET /api/openapi.json ────────────────────────────────────────────────────
+
+Deno.test("GET /api/openapi.json returns OpenAPI 3.1 spec", async () => {
+  const { handler } = makeApp();
+  const res = await handler(new Request("http://localhost/api/openapi.json"));
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
+  const body = await res.json();
+  assertEquals(body.openapi, "3.1.0");
+  assertEquals(body.info.title, "fpv-inventory");
+  assertExists(body.paths["/api/health"]);
+  assertExists(body.paths["/api/parts"]);
+  assertExists(body.paths["/api/parts/{id}"]);
+  assertExists(body.paths["/api/builds"]);
+  assertExists(body.paths["/api/builds/{id}"]);
+});

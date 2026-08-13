@@ -9,6 +9,7 @@ import {
   type PartType,
 } from "./db.ts";
 import { VERSION } from "./version.ts";
+import openapiSpec from "./openapi.json" with { type: "json" };
 
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -55,6 +56,10 @@ export function handleApi(db: DB, req: Request, url: URL): Response | null {
 
   if (path === "/api/health" && req.method === "GET") {
     return json({ status: "ok", version: VERSION, name: "fpv-inventory" });
+  }
+
+  if (path === "/api/openapi.json" && req.method === "GET") {
+    return json(openapiSpec);
   }
 
   if (path === "/api/parts" && req.method === "GET") {
