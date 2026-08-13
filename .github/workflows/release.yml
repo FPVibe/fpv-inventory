@@ -31,6 +31,7 @@ jobs:
       packages: write
     outputs:
       short_sha: ${{ steps.version.outputs.short_sha }}
+      has_rtappstore_pat: ${{ steps.check_pat.outputs.has_pat }}
 
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +41,10 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check RTAPPSTORE_PAT availability
+        id: check_pat
+        run: echo "has_pat=${{ secrets.RTAPPSTORE_PAT != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -85,8 +90,10 @@ jobs:
 
   update-appstore:
     needs: docker
-    # Skip gracefully when the PAT secret is absent (forks, contributor PRs, etc.)
-    if: ${{ secrets.RTAPPSTORE_PAT != '' }}
+    # Skip gracefully when RTAPPSTORE_PAT is not configured in repository secrets.
+    # Note: secrets context is not available in job-level if conditions; the boolean
+    # is computed in a docker job step and passed via needs output instead.
+    if: needs.docker.outputs.has_rtappstore_pat == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
