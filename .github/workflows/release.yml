@@ -81,7 +81,7 @@ jobs:
       - name: Pin docker-compose.yml to new image tag
         run: |
           SHORT_SHA=${{ steps.version.outputs.short_sha }}
-          sed -i "s|image: ghcr.io/fpvibe/fpv-inventory:.*|image: ghcr.io/fpvibe/fpv-inventory:sha-${SHORT_SHA}|" docker-compose.yml
+          sed -i "s|image: ghcr.io/cori/fpv-inventory:.*|image: ghcr.io/cori/fpv-inventory:sha-${SHORT_SHA}|" docker-compose.yml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docker-compose.yml
@@ -120,7 +120,7 @@ jobs:
             mv apps/fpv-inventory/config.json.tmp apps/fpv-inventory/config.json
 
           # Update docker-compose.json image tag (handles legacy cori/ owner name too)
-          sed -i "s|ghcr\.io/[a-z0-9_-]*/fpv-inventory:sha-[a-f0-9]*|ghcr.io/fpvibe/fpv-inventory:sha-$VERSION|g" \
+          sed -i "s|ghcr\\.io/[a-z0-9_-]*/fpv-inventory:sha-[a-f0-9]*|ghcr.io/cori/fpv-inventory:sha-$VERSION|g" \
             apps/fpv-inventory/docker-compose.json
 
           echo "tipi_version=$(jq -r '.tipi_version' apps/fpv-inventory/config.json)" >> "$GITHUB_OUTPUT"
@@ -158,6 +158,6 @@ jobs:
 
           - Version: sha-${VERSION}
           - tipi_version: ${{ steps.version.outputs.tipi_version }}
-          - Image: ghcr.io/fpvibe/fpv-inventory:sha-${VERSION}
+          - Image: ghcr.io/cori/fpv-inventory:sha-${VERSION}
 
           All validation tests pass."
