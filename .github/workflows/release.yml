@@ -44,14 +44,7 @@ jobs:
 
       - name: Check RTAPPSTORE_PAT availability
         id: check-pat
-        env:
-          PAT: ${{ secrets.RTAPPSTORE_PAT }}
-        run: |
-          if [ -n "$PAT" ]; then
-            echo "has_pat=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_pat=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "has_pat=${{ secrets.RTAPPSTORE_PAT != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -97,8 +90,9 @@ jobs:
 
   update-appstore:
     needs: docker
-    # Skip gracefully when the PAT secret is absent (forks, contributor PRs, etc.)
-    # Note: secrets context is not available in job-level if; check via needs output instead
+    # Skip gracefully when RTAPPSTORE_PAT is not configured in repository secrets.
+    # Note: secrets context is not available in job-level if conditions; the boolean
+    # is computed in a docker job step and passed via needs output instead.
     if: needs.docker.outputs.has_rtappstore_pat == 'true'
     runs-on: ubuntu-latest
     permissions:
