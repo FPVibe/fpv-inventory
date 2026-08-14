@@ -7,6 +7,7 @@ COPY deno.json .
 COPY main.ts .
 COPY db.ts .
 COPY api.ts .
+COPY version.ts .
 COPY vendor/ vendor/
 
 # Create data directories
