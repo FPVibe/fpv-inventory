@@ -8,6 +8,7 @@ COPY main.ts .
 COPY db.ts .
 COPY api.ts .
 COPY version.ts .
+COPY openapi.json .
 COPY vendor/ vendor/
 
 # Create data directories
