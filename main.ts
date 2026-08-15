@@ -1102,13 +1102,17 @@ export function makeHandler(db: DB) {
         });
       }
 
-      // Collect non-zero qty_ entries as selections
+      // Collect non-zero qty_ entries as selections.
+      // Require strictly digit-only suffixes and values to avoid silent coercion
+      // of partial numbers (e.g. qty_12abc → 12, value "4.9" → 4).
       const selections: { part_id: number; qty: number }[] = [];
       for (const [key, value] of form.entries()) {
-        if (!key.startsWith("qty_")) continue;
+        if (!/^qty_\d+$/.test(key)) continue;
+        const rawVal = value.toString();
+        if (!/^\d+$/.test(rawVal)) continue;
         const partId = parseInt(key.slice(4), 10);
-        const qty = parseInt(value.toString(), 10);
-        if (isNaN(partId) || isNaN(qty) || qty <= 0) continue;
+        const qty = parseInt(rawVal, 10);
+        if (qty <= 0) continue;
         selections.push({ part_id: partId, qty });
       }
 
