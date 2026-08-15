@@ -7,7 +7,9 @@ import {
   type PartFilter,
   type PartStatus,
   type PartType,
+  queryStockRows,
 } from "./db.ts";
+import { allocationForGroup } from "./allocation.ts";
 import { VERSION } from "./version.ts";
 import openapiSpec from "./openapi.json" with { type: "json" };
 
@@ -113,6 +115,73 @@ export function handleApi(db: DB, req: Request, url: URL): Response | null {
     const build = getBuild(db, id);
     if (!build) return errorResponse("Build not found", 404);
     return json(build);
+  }
+
+  // GET /api/builds/:id/bom — BOM with per-child allocation data
+  const buildBomMatch = path.match(/^\/api\/builds\/(\d+)\/bom$/);
+  if (buildBomMatch && req.method === "GET") {
+    const id = parseInt(buildBomMatch[1], 10);
+    const build = getBuild(db, id);
+    if (!build) return errorResponse("Build not found", 404);
+    const bom = build.children.map((child) => {
+      const alloc = allocationForGroup(db, child.name, child.type);
+      return {
+        part_id: child.id,
+        part_name: child.name,
+        part_type: child.type,
+        qty_in_build: child.quantity,
+        role: null,
+        on_hand: alloc.on_hand,
+        allocated: alloc.allocated,
+        free: alloc.free,
+      };
+    });
+    return json(bom);
+  }
+
+  // GET /api/parts/:id/allocation — allocation summary for the part's name+type group
+  const partAllocMatch = path.match(/^\/api\/parts\/(\d+)\/allocation$/);
+  if (partAllocMatch && req.method === "GET") {
+    const id = parseInt(partAllocMatch[1], 10);
+    const part = getPart(db, id);
+    if (!part) return errorResponse("Part not found", 404);
+    const alloc = allocationForGroup(db, part.name, part.type);
+    return json({
+      part_id: id,
+      part_name: part.name,
+      on_hand: alloc.on_hand,
+      allocated: alloc.allocated,
+      free: alloc.free,
+      builds: alloc.builds,
+    });
+  }
+
+  // GET /api/gear — list gear-type parts
+  if (path === "/api/gear" && req.method === "GET") {
+    const filter: PartFilter = { type: "gear" };
+    const status = url.searchParams.get("status");
+    const q = url.searchParams.get("q");
+    if (status !== null) {
+      if (!isPartStatus(status)) return json([]);
+      filter.status = status;
+    }
+    if (q !== null) filter.q = q;
+    return json(listParts(db, filter));
+  }
+
+  // GET /api/gear/:id — single gear part with history
+  const gearDetailMatch = path.match(/^\/api\/gear\/(\d+)$/);
+  if (gearDetailMatch && req.method === "GET") {
+    const id = parseInt(gearDetailMatch[1], 10);
+    const part = getPart(db, id);
+    if (!part || part.type !== "gear") return errorResponse("Gear not found", 404);
+    const history = getPartHistory(db, id);
+    return json({ ...part, history });
+  }
+
+  // GET /api/stock — aggregate by type × status (all types; consumers filter)
+  if (path === "/api/stock" && req.method === "GET") {
+    return json(queryStockRows(db));
   }
 
   return errorResponse("Not found", 404);
