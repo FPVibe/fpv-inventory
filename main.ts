@@ -399,7 +399,10 @@ function stockPage(db: DB): string {
   }
 
   // Group rows by type
-  const byType = new Map<string, Array<{ status: string; total_quantity: number; count: number }>>();
+  const byType = new Map<
+    string,
+    Array<{ status: string; total_quantity: number; count: number }>
+  >();
   for (const [type, status, total_quantity, count] of rows) {
     const key = type ?? "(untyped)";
     if (!byType.has(key)) byType.set(key, []);
@@ -412,8 +415,12 @@ function stockPage(db: DB): string {
       : (TYPE_LABELS[typeName as PartType] ?? typeName);
     const statusRows = statuses.map(({ status, total_quantity, count }) => `
       <div class="part-row">
-        <span class="part-name" style="flex:none;min-width:100px">${statusBadge(status as PartStatus)}</span>
-        <span class="part-meta">${total_quantity} units (${count} row${count !== 1 ? "s" : ""})</span>
+        <span class="part-name" style="flex:none;min-width:100px">${
+      statusBadge(status as PartStatus)
+    }</span>
+        <span class="part-meta">${total_quantity} units (${count} row${
+      count !== 1 ? "s" : ""
+    })</span>
       </div>`).join("");
     return `
       <div class="card">
@@ -809,8 +816,7 @@ function buildsNewPage(db: DB, error?: string): string {
               aria-label="Quantity of ${escape(p.name)} to install"
             >
           </td>
-        </tr>`
-      ).join("")
+        </tr>`).join("")
     : `<tr><td colspan="3" style="padding:12px;color:#8b949e">No stock available. Add parts from the <a href="/">inventory</a>.</td></tr>`;
 
   return layout(

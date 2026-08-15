@@ -80,7 +80,12 @@ Deno.test("assembleBuild creates a craft with correct child rows", () => {
 
 Deno.test("assembleBuild decrements stock rows by the selected quantity", () => {
   const db = makeDb();
-  const motorId = createPart(db, { name: "0702 Motor", quantity: 12, status: "unused", type: "motor" });
+  const motorId = createPart(db, {
+    name: "0702 Motor",
+    quantity: 12,
+    status: "unused",
+    type: "motor",
+  });
   const fcId = createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
 
   assembleBuild(db, {
@@ -101,7 +106,12 @@ Deno.test("assembleBuild decrements stock rows by the selected quantity", () => 
 
 Deno.test("assembleBuild stock rows kept even at quantity 0", () => {
   const db = makeDb();
-  const motorId = createPart(db, { name: "0702 Motor", quantity: 4, status: "unused", type: "motor" });
+  const motorId = createPart(db, {
+    name: "0702 Motor",
+    quantity: 4,
+    status: "unused",
+    type: "motor",
+  });
 
   assembleBuild(db, {
     name: "Whoop",
@@ -116,7 +126,12 @@ Deno.test("assembleBuild stock rows kept even at quantity 0", () => {
 
 Deno.test("assembleBuild conservation: allocationForGroup shows on_hand 12 / allocated 4 / free 8", () => {
   const db = makeDb();
-  const motorId = createPart(db, { name: "0702 Motor", quantity: 12, status: "unused", type: "motor" });
+  const motorId = createPart(db, {
+    name: "0702 Motor",
+    quantity: 12,
+    status: "unused",
+    type: "motor",
+  });
   const fcId = createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
 
   assembleBuild(db, {
@@ -137,7 +152,12 @@ Deno.test("assembleBuild conservation: allocationForGroup shows on_hand 12 / all
 
 Deno.test("assembleBuild records correct history entries", () => {
   const db = makeDb();
-  const motorId = createPart(db, { name: "0702 Motor", quantity: 8, status: "unused", type: "motor" });
+  const motorId = createPart(db, {
+    name: "0702 Motor",
+    quantity: 8,
+    status: "unused",
+    type: "motor",
+  });
 
   const craftId = assembleBuild(db, {
     name: "Quad",
@@ -191,9 +211,15 @@ Deno.test("assembleBuild rejects qty < 1", () => {
 
 Deno.test("assembleBuild rejects craft-type parts as selections", () => {
   const db = makeDb();
-  const existingCraftId = createPart(db, { name: "Old Quad", quantity: 1, status: "retired", type: "craft" });
+  const existingCraftId = createPart(db, {
+    name: "Old Quad",
+    quantity: 1,
+    status: "retired",
+    type: "craft",
+  });
   assertThrows(
-    () => assembleBuild(db, { name: "New Quad", selections: [{ part_id: existingCraftId, qty: 1 }] }),
+    () =>
+      assembleBuild(db, { name: "New Quad", selections: [{ part_id: existingCraftId, qty: 1 }] }),
     Error,
   );
   db.close();
@@ -201,8 +227,19 @@ Deno.test("assembleBuild rejects craft-type parts as selections", () => {
 
 Deno.test("assembleBuild rejects non-top-level parts (child of another)", () => {
   const db = makeDb();
-  const craftId = createPart(db, { name: "Old Quad", quantity: 1, status: "in-use", type: "craft" });
-  const installedId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor", parent_id: craftId });
+  const craftId = createPart(db, {
+    name: "Old Quad",
+    quantity: 1,
+    status: "in-use",
+    type: "craft",
+  });
+  const installedId = createPart(db, {
+    name: "Motor",
+    quantity: 4,
+    status: "in-use",
+    type: "motor",
+    parent_id: craftId,
+  });
   assertThrows(
     () => assembleBuild(db, { name: "New Quad", selections: [{ part_id: installedId, qty: 1 }] }),
     Error,
@@ -280,7 +317,12 @@ Deno.test("GET /builds/new shows available top-level non-craft parts with qty > 
 
 Deno.test("POST /builds/from-bin creates build and redirects to new craft detail", async () => {
   const { db, handler } = makeApp();
-  const motorId = createPart(db, { name: "0702 Motor", quantity: 12, status: "unused", type: "motor" });
+  const motorId = createPart(db, {
+    name: "0702 Motor",
+    quantity: 12,
+    status: "unused",
+    type: "motor",
+  });
   const fcId = createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
 
   const form = new FormData();
@@ -288,7 +330,9 @@ Deno.test("POST /builds/from-bin creates build and redirects to new craft detail
   form.set(`qty_${motorId}`, "4");
   form.set(`qty_${fcId}`, "1");
 
-  const res = await handler(new Request("http://localhost/builds/from-bin", { method: "POST", body: form }));
+  const res = await handler(
+    new Request("http://localhost/builds/from-bin", { method: "POST", body: form }),
+  );
   assertEquals(res.status, 303);
   const location = res.headers.get("Location");
   assertExists(location);
@@ -308,7 +352,9 @@ Deno.test("POST /builds/from-bin with no name returns 400", async () => {
   const form = new FormData();
   form.set("name", "");
 
-  const res = await handler(new Request("http://localhost/builds/from-bin", { method: "POST", body: form }));
+  const res = await handler(
+    new Request("http://localhost/builds/from-bin", { method: "POST", body: form }),
+  );
   assertEquals(res.status, 400);
 });
 
@@ -316,7 +362,9 @@ Deno.test("POST /builds/from-bin with no parts selected returns 400", async () =
   const { handler } = makeApp();
   const form = new FormData();
   form.set("name", "Empty Build");
-  const res = await handler(new Request("http://localhost/builds/from-bin", { method: "POST", body: form }));
+  const res = await handler(
+    new Request("http://localhost/builds/from-bin", { method: "POST", body: form }),
+  );
   assertEquals(res.status, 400);
 });
 
@@ -328,7 +376,9 @@ Deno.test("POST /builds/from-bin over-request returns 400 and re-renders form", 
   form.set("name", "Over Build");
   form.set(`qty_${motorId}`, "10"); // only 4 available
 
-  const res = await handler(new Request("http://localhost/builds/from-bin", { method: "POST", body: form }));
+  const res = await handler(
+    new Request("http://localhost/builds/from-bin", { method: "POST", body: form }),
+  );
   assertEquals(res.status, 400);
   const body = await res.text();
   assertStringIncludes(body.toLowerCase(), "not enough");

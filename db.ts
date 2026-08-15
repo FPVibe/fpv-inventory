@@ -496,7 +496,9 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
     if (part.type === "craft") throw new Error(`Cannot install a craft as a component`);
     if (part.parent_id !== null) throw new Error(`Part ${sel.part_id} is not top-level`);
     if (part.quantity < sel.qty) {
-      throw new Error(`Not enough quantity for "${part.name}": have ${part.quantity}, need ${sel.qty}`);
+      throw new Error(
+        `Not enough quantity for "${part.name}": have ${part.quantity}, need ${sel.qty}`,
+      );
     }
   }
 
@@ -520,10 +522,13 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
       const part = getPart(db, sel.part_id)!;
 
       // Decrement stock row (keep at 0 — history stays attached)
-      db.query(`UPDATE parts SET quantity = quantity - ?, updated_at = datetime('now') WHERE id = ?`, [
-        sel.qty,
-        sel.part_id,
-      ]);
+      db.query(
+        `UPDATE parts SET quantity = quantity - ?, updated_at = datetime('now') WHERE id = ?`,
+        [
+          sel.qty,
+          sel.part_id,
+        ],
+      );
       db.query(
         `INSERT INTO part_history (part_id, action, old_status, new_status, quantity_delta)
          VALUES (?, 'updated', ?, ?, ?)`,

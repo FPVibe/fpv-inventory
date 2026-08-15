@@ -292,8 +292,8 @@ Deno.test("GET /api/stock rows with null type return type: null", async () => {
   createPart(db, { name: "Unknown Part", quantity: 3, status: "unused" }); // type is null
 
   const res = await handler(new Request("http://localhost/api/stock"));
-  const body: Array<{ type: string | null; status: string; total_quantity: number }> =
-    await res.json();
+  const body: Array<{ type: string | null; status: string; total_quantity: number }> = await res
+    .json();
   const nullTypeRow = body.find((r) => r.type === null);
   assertExists(nullTypeRow);
   assertEquals(nullTypeRow!.total_quantity, 3);
