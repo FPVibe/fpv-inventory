@@ -486,18 +486,28 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
   if (!input.name.trim()) throw new Error("Name is required");
   if (input.selections.length === 0) throw new Error("At least one part must be selected");
 
-  // Pre-validate all selections before starting the transaction
+  // Validate individual qty values first.
   for (const sel of input.selections) {
     if (!Number.isInteger(sel.qty) || sel.qty < 1) {
       throw new Error(`qty must be ≥ 1, got ${sel.qty}`);
     }
-    const part = getPart(db, sel.part_id);
-    if (!part) throw new Error(`Part ${sel.part_id} not found`);
+  }
+
+  // Accumulate totals per part_id so duplicate entries can't individually pass
+  // validation while collectively overdrawing stock.
+  const totals = new Map<number, number>();
+  for (const sel of input.selections) {
+    totals.set(sel.part_id, (totals.get(sel.part_id) ?? 0) + sel.qty);
+  }
+
+  for (const [partId, totalQty] of totals) {
+    const part = getPart(db, partId);
+    if (!part) throw new Error(`Part ${partId} not found`);
     if (part.type === "craft") throw new Error(`Cannot install a craft as a component`);
-    if (part.parent_id !== null) throw new Error(`Part ${sel.part_id} is not top-level`);
-    if (part.quantity < sel.qty) {
+    if (part.parent_id !== null) throw new Error(`Part ${partId} is not top-level`);
+    if (part.quantity < totalQty) {
       throw new Error(
-        `Not enough quantity for "${part.name}": have ${part.quantity}, need ${sel.qty}`,
+        `Not enough quantity for "${part.name}": have ${part.quantity}, need ${totalQty}`,
       );
     }
   }
@@ -551,6 +561,34 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
   });
 
   return craftId;
+}
+
+export interface StockAggregationRow {
+  type: string | null;
+  status: string;
+  total_quantity: number;
+  count: number;
+}
+
+/**
+ * Aggregate parts by type × status — all types included (craft, gear, etc.).
+ * Consumers filter as needed (e.g. exclude craft for the stock UI view).
+ * Single source of truth shared by GET /api/stock and the /stock HTML page.
+ */
+export function queryStockRows(db: DB): StockAggregationRow[] {
+  type Row = [string | null, string, number, number];
+  const rows = db.query<Row>(
+    `SELECT type, status, SUM(quantity) AS total_quantity, COUNT(*) AS count
+     FROM parts
+     GROUP BY type, status
+     ORDER BY type, status`,
+  );
+  return rows.map(([type, status, total_quantity, count]) => ({
+    type,
+    status,
+    total_quantity,
+    count,
+  }));
 }
 
 export { DB };

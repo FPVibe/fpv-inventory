@@ -54,11 +54,10 @@ Deno.test("GET /stock excludes craft-type rows", async () => {
   const res = await handler(new Request("http://localhost/stock"));
   const body = await res.text();
 
-  // craft should not appear in the stock check view
+  // Motor should appear in stock view
   assertStringIncludes(body.toLowerCase(), "motor");
-  // "My Quad" craft name shouldn't be listed, but even if the word "craft" doesn't
-  // appear we just need the build counts to be absent — craft qty of 1 should not show
-  // The key invariant is that motor (qty 4) does appear.
+  // Craft ("My Quad") must NOT appear — the whole point of the filter
+  assertEquals(body.includes("My Quad"), false);
 });
 
 Deno.test("GET /stock shows friendly empty state for empty DB", async () => {

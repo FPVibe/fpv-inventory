@@ -283,6 +283,30 @@ Deno.test("assembleBuild rolls back everything on validation failure mid-transac
   db.close();
 });
 
+Deno.test("assembleBuild rejects duplicate part_id entries that would overdraw stock", () => {
+  const db = makeDb();
+  // Only 4 available; two selections of qty=3 each total 6 > 4
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+
+  assertThrows(
+    () =>
+      assembleBuild(db, {
+        name: "Quad",
+        selections: [
+          { part_id: motorId, qty: 3 },
+          { part_id: motorId, qty: 3 },
+        ],
+      }),
+    Error,
+    "Not enough quantity",
+  );
+
+  // Stock unchanged — nothing was committed
+  assertEquals(getPart(db, motorId)!.quantity, 4);
+  assertEquals(listParts(db, { type: "craft" }).length, 0);
+  db.close();
+});
+
 // ─── GET /builds/new (UI) ─────────────────────────────────────────────────────
 
 Deno.test("GET /builds/new returns 200 HTML with a form", async () => {

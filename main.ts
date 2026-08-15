@@ -10,6 +10,7 @@ import {
   type Part,
   type PartStatus,
   type PartType,
+  queryStockRows,
   updatePart,
 } from "./db.ts";
 import { allocationForGroup } from "./allocation.ts";
@@ -378,14 +379,8 @@ function partRow(part: Part): string {
 }
 
 function stockPage(db: DB): string {
-  type StockRow = [string | null, string, number, number];
-  const rows = db.query<StockRow>(
-    `SELECT type, status, SUM(quantity) AS total_quantity, COUNT(*) AS count
-     FROM parts
-     WHERE type != 'craft' OR type IS NULL
-     GROUP BY type, status
-     ORDER BY type, status`,
-  );
+  // Reuse the shared aggregation function (INV-7); exclude craft rows here.
+  const rows = queryStockRows(db).filter((r) => r.type !== "craft");
 
   if (rows.length === 0) {
     return layout(
@@ -403,7 +398,7 @@ function stockPage(db: DB): string {
     string,
     Array<{ status: string; total_quantity: number; count: number }>
   >();
-  for (const [type, status, total_quantity, count] of rows) {
+  for (const { type, status, total_quantity, count } of rows) {
     const key = type ?? "(untyped)";
     if (!byType.has(key)) byType.set(key, []);
     byType.get(key)!.push({ status, total_quantity, count });

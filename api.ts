@@ -7,6 +7,7 @@ import {
   type PartFilter,
   type PartStatus,
   type PartType,
+  queryStockRows,
 } from "./db.ts";
 import { allocationForGroup } from "./allocation.ts";
 import { VERSION } from "./version.ts";
@@ -178,23 +179,9 @@ export function handleApi(db: DB, req: Request, url: URL): Response | null {
     return json({ ...part, history });
   }
 
-  // GET /api/stock — aggregate by type × status
+  // GET /api/stock — aggregate by type × status (all types; consumers filter)
   if (path === "/api/stock" && req.method === "GET") {
-    type StockRow = [string | null, string, number, number];
-    const rows = db.query<StockRow>(
-      `SELECT type, status, SUM(quantity) AS total_quantity, COUNT(*) AS count
-       FROM parts
-       GROUP BY type, status
-       ORDER BY type, status`,
-    );
-    return json(
-      rows.map(([type, status, total_quantity, count]) => ({
-        type,
-        status,
-        total_quantity,
-        count,
-      })),
-    );
+    return json(queryStockRows(db));
   }
 
   return errorResponse("Not found", 404);
