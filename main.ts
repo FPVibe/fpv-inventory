@@ -1,5 +1,6 @@
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import {
+  assembleBuild,
   createPart,
   getPart,
   getPartHistory,
@@ -777,6 +778,84 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
   );
 }
 
+function buildsNewPage(db: DB, error?: string): string {
+  // Show top-level non-craft parts with quantity > 0 as candidates
+  const parts = listParts(db, { parent_id: null }).filter(
+    (p) => p.type !== "craft" && p.quantity > 0,
+  );
+
+  const errorHtml = error
+    ? `<div style="background:#3d1515;border:1px solid #b91c1c;border-radius:6px;padding:10px 14px;margin-bottom:12px;color:#fca5a5;font-size:.875rem">${
+      escape(error)
+    }</div>`
+    : "";
+
+  const partRows = parts.length > 0
+    ? parts.map((p) => `
+        <tr>
+          <td style="padding:8px 6px">
+            <a href="/parts/${p.id}">${escape(p.name)}</a>
+            ${p.type ? typeBadge(p.type) : ""}
+          </td>
+          <td style="padding:8px 6px;text-align:center;color:#8b949e">${p.quantity}</td>
+          <td style="padding:8px 6px;text-align:center">
+            <input
+              type="number"
+              name="qty_${p.id}"
+              min="0"
+              max="${p.quantity}"
+              value="0"
+              style="width:70px;text-align:center"
+              aria-label="Quantity of ${escape(p.name)} to install"
+            >
+          </td>
+        </tr>`
+      ).join("")
+    : `<tr><td colspan="3" style="padding:12px;color:#8b949e">No stock available. Add parts from the <a href="/">inventory</a>.</td></tr>`;
+
+  return layout(
+    "New Build from Bin",
+    `
+    <div class="breadcrumb"><a href="/">← Home</a></div>
+    <div class="card">
+      <h2>New Build from Bin</h2>
+      ${errorHtml}
+      <form method="POST" action="/builds/from-bin">
+        <div class="field">
+          <label>Build Name *</label>
+          <input name="name" required placeholder="e.g. LionBee, Whoop Alpha…" autofocus>
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <textarea name="notes" rows="2" placeholder="First impressions, purpose, configuration…"></textarea>
+        </div>
+        <hr style="border-color:#30363d;margin:12px 0">
+        <p style="font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Pick components</p>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+            <thead>
+              <tr style="color:#8b949e;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">
+                <th style="text-align:left;padding:4px 6px">Part</th>
+                <th style="text-align:center;padding:4px 6px">Available</th>
+                <th style="text-align:center;padding:4px 6px">Use qty</th>
+              </tr>
+            </thead>
+            <tbody style="border-top:1px solid #30363d">
+              ${partRows}
+            </tbody>
+          </table>
+        </div>
+        <hr style="border-color:#30363d;margin:12px 0">
+        <div style="display:flex;gap:8px">
+          <button type="submit" class="btn btn-primary">Assemble Build</button>
+          <a href="/" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
 export function makeHandler(db: DB) {
   return async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -1000,6 +1079,57 @@ export function makeHandler(db: DB) {
       return new Response(stockPage(db), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
+    }
+
+    // GET /builds/new — from-the-bin guided build form (INV-13)
+    if (path === "/builds/new" && req.method === "GET") {
+      return new Response(buildsNewPage(db), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // POST /builds/from-bin — assemble a build from stock (INV-13)
+    if (path === "/builds/from-bin" && req.method === "POST") {
+      const form = await req.formData();
+      const name = form.get("name")?.toString().trim() ?? "";
+      const notes = form.get("notes")?.toString().trim() || undefined;
+
+      if (!name) {
+        return new Response(buildsNewPage(db, "Build name is required"), {
+          status: 400,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      // Collect non-zero qty_ entries as selections
+      const selections: { part_id: number; qty: number }[] = [];
+      for (const [key, value] of form.entries()) {
+        if (!key.startsWith("qty_")) continue;
+        const partId = parseInt(key.slice(4), 10);
+        const qty = parseInt(value.toString(), 10);
+        if (isNaN(partId) || isNaN(qty) || qty <= 0) continue;
+        selections.push({ part_id: partId, qty });
+      }
+
+      if (selections.length === 0) {
+        return new Response(buildsNewPage(db, "Select at least one part to include in the build"), {
+          status: 400,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      let craftId: number;
+      try {
+        craftId = assembleBuild(db, { name, notes, selections });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to assemble build";
+        return new Response(buildsNewPage(db, msg), {
+          status: 400,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      return new Response(null, { status: 303, headers: { Location: `/parts/${craftId}` } });
     }
 
     return new Response("Not Found", { status: 404 });

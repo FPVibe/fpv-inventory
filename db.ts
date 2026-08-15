@@ -461,4 +461,91 @@ export function getPartHistory(db: DB, partId: number): HistoryEntry[] {
   }));
 }
 
+export interface AssembleSelection {
+  part_id: number;
+  qty: number;
+}
+
+export interface AssembleBuildInput {
+  name: string;
+  specs?: string;
+  notes?: string;
+  selections: AssembleSelection[];
+}
+
+/**
+ * Pick components from stock and create a new craft from them.
+ *
+ * Invariant: group `on_hand` is conserved — each selection decrements the
+ * stock row's quantity and creates a new child row with the same quantity.
+ *
+ * Throws on any validation failure; the entire operation is rolled back.
+ * Returns the new craft's id.
+ */
+export function assembleBuild(db: DB, input: AssembleBuildInput): number {
+  if (!input.name.trim()) throw new Error("Name is required");
+  if (input.selections.length === 0) throw new Error("At least one part must be selected");
+
+  // Pre-validate all selections before starting the transaction
+  for (const sel of input.selections) {
+    if (!Number.isInteger(sel.qty) || sel.qty < 1) {
+      throw new Error(`qty must be ≥ 1, got ${sel.qty}`);
+    }
+    const part = getPart(db, sel.part_id);
+    if (!part) throw new Error(`Part ${sel.part_id} not found`);
+    if (part.type === "craft") throw new Error(`Cannot install a craft as a component`);
+    if (part.parent_id !== null) throw new Error(`Part ${sel.part_id} is not top-level`);
+    if (part.quantity < sel.qty) {
+      throw new Error(`Not enough quantity for "${part.name}": have ${part.quantity}, need ${sel.qty}`);
+    }
+  }
+
+  let craftId!: number;
+
+  db.transaction(() => {
+    // Create the craft
+    db.query(
+      `INSERT INTO parts (name, status, type, specs, notes, quantity, parent_id)
+       VALUES (?, 'in-use', 'craft', ?, ?, 1, NULL)`,
+      [input.name.trim(), input.specs ?? null, input.notes ?? null],
+    );
+    craftId = db.lastInsertRowId;
+
+    db.query(
+      `INSERT INTO part_history (part_id, action, to_parent_id) VALUES (?, 'created', NULL)`,
+      [craftId],
+    );
+
+    for (const sel of input.selections) {
+      const part = getPart(db, sel.part_id)!;
+
+      // Decrement stock row (keep at 0 — history stays attached)
+      db.query(`UPDATE parts SET quantity = quantity - ?, updated_at = datetime('now') WHERE id = ?`, [
+        sel.qty,
+        sel.part_id,
+      ]);
+      db.query(
+        `INSERT INTO part_history (part_id, action, old_status, new_status, quantity_delta)
+         VALUES (?, 'updated', ?, ?, ?)`,
+        [sel.part_id, part.status, part.status, -sel.qty],
+      );
+
+      // Create child row
+      db.query(
+        `INSERT INTO parts (name, type, status, specs, quantity, parent_id)
+         VALUES (?, ?, 'in-use', ?, ?, ?)`,
+        [part.name, part.type ?? null, part.specs ?? null, sel.qty, craftId],
+      );
+      const childId = db.lastInsertRowId;
+
+      db.query(
+        `INSERT INTO part_history (part_id, action, to_parent_id) VALUES (?, 'created', ?)`,
+        [childId, craftId],
+      );
+    }
+  });
+
+  return craftId;
+}
+
 export { DB };
