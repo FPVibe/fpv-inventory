@@ -45,7 +45,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/FPVibe/fpv-inventory
+          images: ghcr.io/fpvibe/fpv-inventory
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -94,7 +94,7 @@ jobs:
 
           # Update docker-compose.json to use sha-<short> tag
           jq --arg version "sha-$VERSION" \
-             '.services[0].image = "ghcr.io/FPVibe/fpv-inventory:" + $version' \
+             '.services[0].image = "ghcr.io/fpvibe/fpv-inventory:" + $version' \
              apps/fpv-inventory/docker-compose.json > apps/fpv-inventory/docker-compose.json.tmp && \
           mv apps/fpv-inventory/docker-compose.json.tmp apps/fpv-inventory/docker-compose.json
 
@@ -133,6 +133,6 @@ jobs:
 
             - Version: ${{ steps.version.outputs.version }}
             - tipi_version: ${{ steps.version.outputs.tipi_version }}
-            - Image: ghcr.io/FPVibe/fpv-inventory:sha-${{ steps.version.outputs.version }}
+            - Image: ghcr.io/fpvibe/fpv-inventory:sha-${{ steps.version.outputs.version }}
 
             All validation tests pass."
