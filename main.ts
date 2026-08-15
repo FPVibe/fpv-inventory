@@ -11,6 +11,7 @@ import {
   type PartType,
   updatePart,
 } from "./db.ts";
+import { allocationForGroup } from "./allocation.ts";
 import { handleApi } from "./api.ts";
 
 const PHOTOS_DIR = Deno.env.get("PHOTOS_DIR") ?? "./photos";
@@ -209,6 +210,11 @@ function layout(title: string, body: string): string {
       <body>
         <header>
           <h1><a href="/">🚁 FPV Inventory</a></h1>
+          <nav style="display:flex;gap:12px;margin-left:auto;font-size:.875rem">
+            <a href="/" style="color:#8b949e">Inventory</a>
+            <a href="/stock" style="color:#8b949e">Stock</a>
+            <a href="/builds/new" style="color:#8b949e">New Build</a>
+          </nav>
         </header>
         <div class="container">
         ${body}
@@ -370,6 +376,59 @@ function partRow(part: Part): string {
 </div>`;
 }
 
+function stockPage(db: DB): string {
+  type StockRow = [string | null, string, number, number];
+  const rows = db.query<StockRow>(
+    `SELECT type, status, SUM(quantity) AS total_quantity, COUNT(*) AS count
+     FROM parts
+     WHERE type != 'craft' OR type IS NULL
+     GROUP BY type, status
+     ORDER BY type, status`,
+  );
+
+  if (rows.length === 0) {
+    return layout(
+      "Stock",
+      `<div class="breadcrumb"><a href="/">← Home</a></div>
+       <div class="card">
+         <h2>Stock Check</h2>
+         <p class="empty">No stock yet — add parts from the <a href="/">inventory</a>.</p>
+       </div>`,
+    );
+  }
+
+  // Group rows by type
+  const byType = new Map<string, Array<{ status: string; total_quantity: number; count: number }>>();
+  for (const [type, status, total_quantity, count] of rows) {
+    const key = type ?? "(untyped)";
+    if (!byType.has(key)) byType.set(key, []);
+    byType.get(key)!.push({ status, total_quantity, count });
+  }
+
+  const sections = [...byType.entries()].map(([typeName, statuses]) => {
+    const typeLabel = typeName === "(untyped)"
+      ? "(untyped)"
+      : (TYPE_LABELS[typeName as PartType] ?? typeName);
+    const statusRows = statuses.map(({ status, total_quantity, count }) => `
+      <div class="part-row">
+        <span class="part-name" style="flex:none;min-width:100px">${statusBadge(status as PartStatus)}</span>
+        <span class="part-meta">${total_quantity} units (${count} row${count !== 1 ? "s" : ""})</span>
+      </div>`).join("");
+    return `
+      <div class="card">
+        <h2>${escape(typeLabel)}</h2>
+        ${statusRows}
+      </div>`;
+  }).join("");
+
+  return layout(
+    "Stock",
+    `<div class="breadcrumb"><a href="/">← Home</a></div>
+     <h2 style="font-size:1rem;margin-bottom:16px">Stock Check</h2>
+     ${sections}`,
+  );
+}
+
 function homePage(db: DB, typeFilter?: PartType): string {
   const parts = listParts(db, { parent_id: null, type: typeFilter });
   const rows = parts.length > 0
@@ -446,6 +505,66 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
   const photoSection = part.photo_path
     ? `<img src="/photos/${escape(part.photo_path)}" alt="photo" class="photo-preview">`
     : "";
+
+  // Allocation surfacing (INV-11)
+  // For non-craft top-level parts: show on_hand / allocated / free + build list
+  // For craft parts: show a BOM table with allocation columns
+  let allocationCard = "";
+  if (part.type !== "craft" && part.parent_id === null) {
+    const alloc = allocationForGroup(db, part.name, part.type);
+    const buildsHtml = alloc.builds.length > 0
+      ? alloc.builds.map((b) =>
+        `<div class="part-row">
+          <span class="part-name"><a href="/parts/${b.build_id}">${escape(b.build_name)}</a></span>
+          <span class="part-meta">${b.qty} installed</span>
+         </div>`
+      ).join("")
+      : `<p class="empty">Not installed in any build.</p>`;
+    allocationCard = `
+      <div class="card">
+        <h2>Allocation</h2>
+        <div style="display:flex;gap:24px;margin-bottom:12px;font-size:.9rem">
+          <span><strong>${alloc.on_hand}</strong> <span style="color:#8b949e">on hand</span></span>
+          <span><strong>${alloc.allocated}</strong> <span style="color:#8b949e">allocated</span></span>
+          <span><strong>${alloc.free}</strong> <span style="color:#8b949e">free</span></span>
+        </div>
+        ${buildsHtml}
+      </div>`;
+  } else if (part.type === "craft" && part.parent_id === null && children.length > 0) {
+    // BOM table with allocation columns for builds
+    const bomRows = children.map((child) => {
+      const alloc = allocationForGroup(db, child.name, child.type);
+      return `
+        <tr>
+          <td style="padding:8px 0"><a href="/parts/${child.id}">${escape(child.name)}</a>
+            ${child.type ? typeBadge(child.type) : ""}</td>
+          <td style="padding:8px 0;text-align:right">${child.quantity}</td>
+          <td style="padding:8px 0;text-align:right">${alloc.on_hand}</td>
+          <td style="padding:8px 0;text-align:right">${alloc.allocated}</td>
+          <td style="padding:8px 0;text-align:right">${alloc.free}</td>
+        </tr>`;
+    }).join("");
+    allocationCard = `
+      <div class="card">
+        <h2>Bill of Materials</h2>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+            <thead>
+              <tr style="color:#8b949e;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">
+                <th style="text-align:left;padding:4px 0">Component</th>
+                <th style="text-align:right;padding:4px 0">In Build</th>
+                <th style="text-align:right;padding:4px 0">On Hand</th>
+                <th style="text-align:right;padding:4px 0">Allocated</th>
+                <th style="text-align:right;padding:4px 0">Free</th>
+              </tr>
+            </thead>
+            <tbody style="border-top:1px solid #30363d">
+              ${bomRows}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
 
   const childrenHtml = children.length > 0
     ? children.map(partRow).join("")
@@ -645,6 +764,8 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         </div>
       </div>
     </div>
+
+    ${allocationCard}
 
     <div class="card">
       <h2>Components of ${escape(part.name)}</h2>
@@ -872,6 +993,13 @@ export function makeHandler(db: DB) {
       } catch {
         return new Response("Not Found", { status: 404 });
       }
+    }
+
+    // GET /stock — stock check view (INV-10)
+    if (path === "/stock" && req.method === "GET") {
+      return new Response(stockPage(db), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     return new Response("Not Found", { status: 404 });
