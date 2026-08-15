@@ -2,12 +2,11 @@ FROM denoland/deno:2.2.1
 
 WORKDIR /app
 
-# Copy source files and vendored dependencies
+# Copy source files and vendored dependencies.
+# Use *.ts glob so any new .ts file is automatically included;
+# individual COPY lines caused a recurring class of bug (see issue #68).
+COPY *.ts .
 COPY deno.json .
-COPY main.ts .
-COPY db.ts .
-COPY api.ts .
-COPY version.ts .
 COPY openapi.json .
 COPY vendor/ vendor/
 
