@@ -180,6 +180,130 @@
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
+    },
+    "/api/builds/{id}/bom": {
+      "get": {
+        "operationId": "getBuildBom",
+        "summary": "Get build BOM with allocation data",
+        "description": "Returns the build's direct children with per-component on-hand / allocated / free figures for the component's name+type group.",
+        "tags": ["builds"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of BOM entries (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/BomItem" }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/parts/{id}/allocation": {
+      "get": {
+        "operationId": "getPartAllocation",
+        "summary": "Get part allocation summary",
+        "description": "Returns on-hand / allocated / free figures for the part's name+type group, plus the builds it is installed in. Allocation groups rows by matching name and type.",
+        "tags": ["parts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allocation summary for the part's group",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Allocation" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/gear": {
+      "get": {
+        "operationId": "listGear",
+        "summary": "List gear",
+        "description": "Returns parts with type=gear. Unknown status values return an empty array rather than an error.",
+        "tags": ["gear"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/PartStatus" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring search on name",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of matching gear parts (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Part" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gear/{id}": {
+      "get": {
+        "operationId": "getGear",
+        "summary": "Get gear with history",
+        "description": "Returns a single gear part with its full history. 404 if the id belongs to a non-gear part.",
+        "tags": ["gear"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gear part with full history",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PartWithHistory" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/stock": {
+      "get": {
+        "operationId": "getStock",
+        "summary": "Aggregate stock by type and status",
+        "description": "Returns every part grouped by type and status with summed quantities. All types are included (craft, gear, etc.); consumers filter as needed.",
+        "tags": ["stock"],
+        "responses": {
+          "200": {
+            "description": "Array of type × status aggregates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/StockRow" }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -310,6 +434,77 @@
             }
           }
         ]
+      },
+      "StockRow": {
+        "type": "object",
+        "required": ["type", "status", "total_quantity", "count"],
+        "properties": {
+          "type": {
+            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }],
+            "description": "Null if not categorised"
+          },
+          "status": { "$ref": "#/components/schemas/PartStatus" },
+          "total_quantity": { "type": "integer", "description": "Summed quantity in this group" },
+          "count": { "type": "integer", "description": "Number of rows in this group" }
+        }
+      },
+      "AllocationBuild": {
+        "type": "object",
+        "required": ["build_id", "build_name", "qty"],
+        "properties": {
+          "build_id": { "type": "integer" },
+          "build_name": { "type": "string" },
+          "qty": { "type": "integer", "description": "Quantity installed in this build" }
+        }
+      },
+      "Allocation": {
+        "type": "object",
+        "required": ["part_id", "part_name", "on_hand", "allocated", "free", "builds"],
+        "properties": {
+          "part_id": { "type": "integer" },
+          "part_name": { "type": "string" },
+          "on_hand": {
+            "type": "integer",
+            "description": "Total quantity across all rows with the same name and type"
+          },
+          "allocated": {
+            "type": "integer",
+            "description": "Quantity installed in builds"
+          },
+          "free": { "type": "integer", "description": "on_hand minus allocated" },
+          "builds": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AllocationBuild" },
+            "description": "Builds this part is installed in"
+          }
+        }
+      },
+      "BomItem": {
+        "type": "object",
+        "required": [
+          "part_id",
+          "part_name",
+          "qty_in_build",
+          "role",
+          "on_hand",
+          "allocated",
+          "free"
+        ],
+        "properties": {
+          "part_id": { "type": "integer" },
+          "part_name": { "type": "string" },
+          "part_type": {
+            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }]
+          },
+          "qty_in_build": { "type": "integer", "description": "Quantity used by this build" },
+          "role": {
+            "type": ["string", "null"],
+            "description": "Role of the component within the build; null when not assigned"
+          },
+          "on_hand": { "type": "integer" },
+          "allocated": { "type": "integer" },
+          "free": { "type": "integer" }
+        }
       }
     },
     "responses": {
