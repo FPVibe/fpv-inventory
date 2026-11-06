@@ -38,9 +38,11 @@ Deno.test("GET /parts/:id does not render the edit form inline", async () => {
   const res = await handler(new Request(`http://localhost/parts/${id}`));
   const html = await res.text();
 
-  assertEquals(html.includes('name="status"'), false);
-  assertEquals(html.includes('name="quantity"'), false);
+  // The read view keeps the quick-add form, which has its own status select —
+  // discriminate on the edit form's target rather than the field names.
+  assertEquals(html.includes(`action="/parts/${id}/update"`), false);
   assertEquals(html.includes('name="serial_number"'), false);
+  assertEquals(html.includes('name="purchase_price"'), false);
 });
 
 Deno.test("GET /parts/:id does not render the move form inline", async () => {
@@ -148,8 +150,8 @@ Deno.test("GET /parts/:id/edit does not render the move or photo forms", async (
   const res = await handler(new Request(`http://localhost/parts/${id}/edit`));
   const html = await res.text();
 
-  assertEquals(html.includes('name="new_parent_id"'), false);
-  assertEquals(html.includes('type="file"'), false);
+  assertEquals(html.includes(`action="/parts/${id}/move"`), false);
+  assertEquals(html.includes(`action="/parts/${id}/photo"`), false);
 });
 
 Deno.test("GET /parts/:id/edit pre-fills the current values", async () => {
@@ -188,8 +190,8 @@ Deno.test("GET /parts/:id/move renders the move form only", async () => {
 
   assertEquals(res.status, 200);
   assertStringIncludes(html, 'name="new_parent_id"');
-  assertEquals(html.includes('name="status"'), false);
-  assertEquals(html.includes('type="file"'), false);
+  assertEquals(html.includes(`action="/parts/${id}/update"`), false);
+  assertEquals(html.includes(`action="/parts/${id}/photo"`), false);
 });
 
 Deno.test("GET /parts/:id/move 404s for an unknown id", async () => {
@@ -211,8 +213,8 @@ Deno.test("GET /parts/:id/photo renders the upload form only", async () => {
 
   assertEquals(res.status, 200);
   assertStringIncludes(html, 'type="file"');
-  assertEquals(html.includes('name="status"'), false);
-  assertEquals(html.includes('name="new_parent_id"'), false);
+  assertEquals(html.includes(`action="/parts/${id}/update"`), false);
+  assertEquals(html.includes(`action="/parts/${id}/move"`), false);
 });
 
 Deno.test("GET /parts/:id/photo 404s for an unknown id", async () => {
