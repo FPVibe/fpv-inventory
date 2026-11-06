@@ -10,6 +10,7 @@ import {
   type Part,
   type PartStatus,
   type PartType,
+  queryInventorySummary,
   queryStockRows,
   updatePart,
 } from "./db.ts";
@@ -207,6 +208,12 @@ function layout(title: string, body: string): string {
         .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
         .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
         .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
+        .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .stat { display: flex; flex-direction: column; gap: 2px; }
+        .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; }
+        .stat-value { font-size: 1.5rem; font-weight: 600; color: #e6edf3; line-height: 1.2; }
+        .stat-hint { font-size: .7rem; color: #6e7681; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
       </style>
       </head>
       <body>
@@ -432,24 +439,61 @@ function stockPage(db: DB): string {
   );
 }
 
-function homePage(db: DB, typeFilter?: PartType): string {
-  const parts = listParts(db, { parent_id: null, type: typeFilter });
+function summaryCard(db: DB): string {
+  const s = queryInventorySummary(db);
+  const value = `$${s.inventory_value.toFixed(2)}`;
+  const stat = (id: string, label: string, figure: string, hint: string) => `
+  <div class="stat">
+    <span class="stat-label">${escape(label)}</span>
+    <span class="stat-value" id="${id}">${escape(figure)}</span>
+    <span class="stat-hint">${escape(hint)}</span>
+  </div>`;
+
+  return `
+<div class="card">
+  <h2>Inventory</h2>
+  <div class="stat-row">
+    ${stat("stat-total-parts", "Total parts", String(s.total_parts), "rows in the bin")}
+    ${stat("stat-total-quantity", "Total quantity", String(s.total_quantity), "units on hand")}
+    ${stat("stat-inventory-value", "Inventory value", value, "at purchase price")}
+    ${stat("stat-low-stock", "Low stock", String(s.low_stock), "3 units or fewer")}
+    ${
+    stat(
+      "stat-installed-in-builds",
+      "Installed in builds",
+      String(s.installed_in_builds),
+      "rows in a build",
+    )
+  }
+  </div>
+</div>`;
+}
+
+function homePage(db: DB, typeFilter?: PartType, query?: string): string {
+  const parts = listParts(db, { parent_id: null, type: typeFilter, q: query });
+  const searching = query != null && query.length > 0;
   const rows = parts.length > 0
     ? parts.map(partRow).join("")
+    : searching
+    ? `<p class="empty">No parts match &ldquo;${escape(query)}&rdquo;.</p>`
     : `<p class="empty">No parts yet — add something above.</p>`;
 
   const filterBar = `
 <form method="GET" action="/" style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-  <label style="margin:0;color:#8b949e;font-size:.875rem">Filter by type:</label>
+  <input type="search" name="q" value="${
+    escape(query ?? "")
+  }" placeholder="Search parts…" aria-label="Search parts" style="width:auto;min-width:180px">
   <select name="type" onchange="this.form.submit()" style="width:auto">
     ${typeOptions(typeFilter ?? null)}
   </select>
-  ${typeFilter ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
+  <button type="submit" class="btn btn-sm">Search</button>
+  ${typeFilter || searching ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
 </form>`;
 
   return layout(
     "Inventory",
     `
+    ${summaryCard(db)}
     ${quickAddForm()}
     <div class="card">
       <h2>Parts &amp; Assemblies</h2>
@@ -668,96 +712,11 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         : ""
     }
 
-        <hr style="border-color:#30363d;margin:12px 0">
-
-        <form method="POST" action="/parts/${id}/update">
-          <div class="field">
-            <label>Status</label>
-            <select name="status">
-              ${
-      (["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
-        .map((s) =>
-          `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`
-        )
-        .join("")
-    }
-            </select>
-          </div>
-          <div class="field">
-            <label>Type</label>
-            <select name="type">
-              ${typeOptions(part.type)}
-            </select>
-          </div>
-          <div class="field">
-            <label>Quantity</label>
-            <input name="quantity" type="number" min="0" value="${escape(part.quantity)}">
-          </div>
-          <div class="field">
-            <label>Notes</label>
-            <textarea name="notes" rows="2">${escape(part.notes ?? "")}</textarea>
-          </div>
-          <div class="field">
-            <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
-            <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${
-      escape(part.specs ?? "")
-    }</textarea>
-          </div>
-          <hr style="border-color:#30363d;margin:12px 0">
-          <p style="font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Procurement</p>
-          <div class="field">
-            <label>Serial Number</label>
-            <input name="serial_number" value="${escape(part.serial_number ?? "")}">
-          </div>
-          <div class="grid-2">
-            <div class="field">
-              <label>Purchase Date</label>
-              <input type="date" name="purchase_date" value="${escape(part.purchase_date ?? "")}">
-            </div>
-            <div class="field">
-              <label>Warranty Expiry</label>
-              <input type="date" name="warranty_expiry" value="${
-      escape(part.warranty_expiry ?? "")
-    }">
-            </div>
-          </div>
-          <div class="field">
-            <label>Purchase Price</label>
-            <input type="number" step="0.01" min="0" name="purchase_price"
-              value="${escape(part.purchase_price != null ? String(part.purchase_price) : "")}"
-              style="max-width:160px">
-          </div>
-          <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
-        </form>
-
-        <hr style="border-color:#30363d;margin:12px 0">
-
-        <form method="POST" action="/parts/${id}/move" style="margin-top:4px">
-          <div class="field">
-            <label>Move to assembly (or spare parts)</label>
-            <select name="new_parent_id">
-              <option value=""${
-      currentParentId == null ? " selected" : ""
-    }>(spare parts / top-level)</option>
-              ${parentOptions}
-            </select>
-          </div>
-          <div class="field">
-            <label>Reason (optional)</label>
-            <input name="notes" placeholder="e.g. Salvaged from crash">
-          </div>
-          <button type="submit" class="btn btn-sm">Move</button>
-        </form>
-
-        <hr style="border-color:#30363d;margin:12px 0">
-
-        <form method="POST" action="/parts/${id}/photo" enctype="multipart/form-data">
-          <div class="field">
-            <label>Upload photo</label>
-            <input type="file" name="photo" accept="image/*">
-          </div>
-          <button type="submit" class="btn btn-sm">Upload</button>
-        </form>
+        <div class="actions">
+          <a href="/parts/${id}/edit" class="btn btn-primary btn-sm">Edit</a>
+          <a href="/parts/${id}/move" class="btn btn-sm">Move</a>
+          <a href="/parts/${id}/photo" class="btn btn-sm">Change photo</a>
+        </div>
       </div>
 
       <div>
@@ -776,6 +735,151 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
     </div>
 
     ${quickAddForm(id)}
+  `,
+  );
+}
+
+async function partEditPage(db: DB, id: number): Promise<string | null> {
+  const part = getPart(db, id);
+  if (!part) return null;
+  const breadcrumb = await buildBreadcrumb(db, id);
+
+  return layout(
+    `Edit ${part.name}`,
+    `
+    ${breadcrumb}
+    <div class="card">
+      <h2>Edit ${escape(part.name)}</h2>
+      <form method="POST" action="/parts/${id}/update">
+        <div class="field">
+          <label>Status</label>
+          <select name="status">
+            ${
+      (["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
+        .map((s) =>
+          `<option value="${s}"${s === part.status ? " selected" : ""}>${STATUS_LABELS[s]}</option>`
+        )
+        .join("")
+    }
+          </select>
+        </div>
+        <div class="field">
+          <label>Type</label>
+          <select name="type">
+            ${typeOptions(part.type)}
+          </select>
+        </div>
+        <div class="field">
+          <label>Quantity</label>
+          <input name="quantity" type="number" min="0" value="${escape(part.quantity)}">
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">${escape(part.notes ?? "")}</textarea>
+        </div>
+        <div class="field">
+          <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+          <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${
+      escape(part.specs ?? "")
+    }</textarea>
+        </div>
+        <hr style="border-color:#30363d;margin:12px 0">
+        <p style="font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Procurement</p>
+        <div class="field">
+          <label>Serial Number</label>
+          <input name="serial_number" value="${escape(part.serial_number ?? "")}">
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label>Purchase Date</label>
+            <input type="date" name="purchase_date" value="${escape(part.purchase_date ?? "")}">
+          </div>
+          <div class="field">
+            <label>Warranty Expiry</label>
+            <input type="date" name="warranty_expiry" value="${escape(part.warranty_expiry ?? "")}">
+          </div>
+        </div>
+        <div class="field">
+          <label>Purchase Price</label>
+          <input type="number" step="0.01" min="0" name="purchase_price"
+            value="${escape(part.purchase_price != null ? String(part.purchase_price) : "")}"
+            style="max-width:160px">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save changes</button>
+          <a href="/parts/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
+async function partMovePage(db: DB, id: number): Promise<string | null> {
+  const part = getPart(db, id);
+  if (!part) return null;
+  const breadcrumb = await buildBreadcrumb(db, id);
+  const parentOptions = listParts(db).filter((p) => p.id !== id)
+    .map((p) => `<option value="${p.id}">${escape(p.name)}</option>`)
+    .join("");
+
+  return layout(
+    `Move ${part.name}`,
+    `
+    ${breadcrumb}
+    <div class="card">
+      <h2>Move ${escape(part.name)}</h2>
+      <form method="POST" action="/parts/${id}/move">
+        <div class="field">
+          <label>Move to assembly (or spare parts)</label>
+          <select name="new_parent_id">
+            <option value=""${
+      part.parent_id == null ? " selected" : ""
+    }>(spare parts / top-level)</option>
+            ${parentOptions}
+          </select>
+        </div>
+        <div class="field">
+          <label>Reason (optional)</label>
+          <input name="notes" placeholder="e.g. Salvaged from crash">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Move</button>
+          <a href="/parts/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
+async function partPhotoPage(db: DB, id: number): Promise<string | null> {
+  const part = getPart(db, id);
+  if (!part) return null;
+  const breadcrumb = await buildBreadcrumb(db, id);
+
+  const currentPhoto = part.photo_path
+    ? `<img src="/photos/${escape(part.photo_path)}" alt="photo" class="photo-preview">`
+    : `<p class="empty">No photo yet.</p>`;
+
+  return layout(
+    `Photo — ${part.name}`,
+    `
+    ${breadcrumb}
+    <div class="card">
+      <h2>Photo for ${escape(part.name)}</h2>
+      ${currentPhoto}
+      <form method="POST" action="/parts/${id}/photo" enctype="multipart/form-data">
+        <div class="field">
+          <label>Upload photo</label>
+          <input type="file" name="photo" accept="image/*">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Upload</button>
+          <a href="/parts/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
   `,
   );
 }
@@ -868,8 +972,13 @@ export function makeHandler(db: DB) {
 
     // GET /
     if (path === "/" && req.method === "GET") {
-      const typeParam = url.searchParams.get("type") as PartType | null;
-      return new Response(homePage(db, typeParam ?? undefined), {
+      // Empty params mean "no filter" — URLSearchParams.get returns "" for ?type=
+      // and ?q=, which nullish coalescing does not catch.
+      const typeParam = url.searchParams.get("type");
+      const type = typeParam ? (typeParam as PartType) : undefined;
+      const qParam = url.searchParams.get("q");
+      const q = qParam ? qParam : undefined;
+      return new Response(homePage(db, type, q), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -959,6 +1068,33 @@ export function makeHandler(db: DB) {
     if (detailMatch && req.method === "GET") {
       const id = parseInt(detailMatch[1], 10);
       const page = await partDetailPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /parts/:id/edit
+    const editMatch = path.match(/^\/parts\/(\d+)\/edit$/);
+    if (editMatch && req.method === "GET") {
+      const id = parseInt(editMatch[1], 10);
+      const page = await partEditPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /parts/:id/move
+    const movePageMatch = path.match(/^\/parts\/(\d+)\/move$/);
+    if (movePageMatch && req.method === "GET") {
+      const id = parseInt(movePageMatch[1], 10);
+      const page = await partMovePage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /parts/:id/photo
+    const photoPageMatch = path.match(/^\/parts\/(\d+)\/photo$/);
+    if (photoPageMatch && req.method === "GET") {
+      const id = parseInt(photoPageMatch[1], 10);
+      const page = await partPhotoPage(db, id);
       if (!page) return new Response("Not Found", { status: 404 });
       return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
