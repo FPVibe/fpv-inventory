@@ -563,6 +563,59 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
   return craftId;
 }
 
+export interface InventorySummary {
+  total_parts: number;
+  total_quantity: number;
+  inventory_value: number;
+  low_stock: number;
+  installed_in_builds: number;
+}
+
+/**
+ * Headline figures for the inventory summary card.
+ *
+ * Craft rows (type='craft') are builds, not stock, so they are excluded from
+ * the parts / quantity / value / low-stock figures. They are excluded by
+ * type rather than by parent_id, so a top-level craft is counted as a build
+ * and not as a part.
+ *
+ * `low_stock` counts distinct names whose summed quantity across all their
+ * rows is at or below the threshold — a part split over several rows is
+ * still one part.
+ *
+ * `installed_in_builds` counts rows whose parent_id points at a craft.
+ */
+export function queryInventorySummary(db: DB, lowStockThreshold = 3): InventorySummary {
+  type TotalsRow = [number, number, number];
+  const totals = db.query<TotalsRow>(
+    `SELECT COUNT(*), COALESCE(SUM(quantity), 0), COALESCE(SUM(purchase_price * quantity), 0)
+     FROM parts WHERE type IS NULL OR type <> 'craft'`,
+  )[0] ?? [0, 0, 0];
+
+  type LowStockRow = [number];
+  const lowStock = db.query<LowStockRow>(
+    `SELECT COUNT(*) FROM (
+       SELECT name FROM parts WHERE type IS NULL OR type <> 'craft'
+       GROUP BY name HAVING SUM(quantity) <= ?
+     )`,
+    [lowStockThreshold],
+  )[0]?.[0] ?? 0;
+
+  type InstalledRow = [number];
+  const installed = db.query<InstalledRow>(
+    `SELECT COUNT(*)
+     FROM parts p JOIN parts parent ON parent.id = p.parent_id AND parent.type = 'craft'`,
+  )[0]?.[0] ?? 0;
+
+  return {
+    total_parts: totals[0],
+    total_quantity: totals[1],
+    inventory_value: totals[2],
+    low_stock: lowStock,
+    installed_in_builds: installed,
+  };
+}
+
 export interface StockAggregationRow {
   type: string | null;
   status: string;

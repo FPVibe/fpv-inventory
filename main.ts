@@ -10,6 +10,7 @@ import {
   type Part,
   type PartStatus,
   type PartType,
+  queryInventorySummary,
   queryStockRows,
   updatePart,
 } from "./db.ts";
@@ -207,6 +208,11 @@ function layout(title: string, body: string): string {
         .detail-field .label { color: #8b949e; font-size: .8rem; display: block; margin-bottom: 2px; }
         .part-qty { background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: .8rem; min-width: 28px; text-align: center; }
         .type-badge { background: #1f3a5f; color: #79c0ff; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 500; }
+        .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .stat { display: flex; flex-direction: column; gap: 2px; }
+        .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; }
+        .stat-value { font-size: 1.5rem; font-weight: 600; color: #e6edf3; line-height: 1.2; }
+        .stat-hint { font-size: .7rem; color: #6e7681; }
       </style>
       </head>
       <body>
@@ -432,6 +438,36 @@ function stockPage(db: DB): string {
   );
 }
 
+function summaryCard(db: DB): string {
+  const s = queryInventorySummary(db);
+  const value = `$${s.inventory_value.toFixed(2)}`;
+  const stat = (id: string, label: string, figure: string, hint: string) => `
+  <div class="stat">
+    <span class="stat-label">${escape(label)}</span>
+    <span class="stat-value" id="${id}">${escape(figure)}</span>
+    <span class="stat-hint">${escape(hint)}</span>
+  </div>`;
+
+  return `
+<div class="card">
+  <h2>Inventory</h2>
+  <div class="stat-row">
+    ${stat("stat-total-parts", "Total parts", String(s.total_parts), "rows in the bin")}
+    ${stat("stat-total-quantity", "Total quantity", String(s.total_quantity), "units on hand")}
+    ${stat("stat-inventory-value", "Inventory value", value, "at purchase price")}
+    ${stat("stat-low-stock", "Low stock", String(s.low_stock), "3 units or fewer")}
+    ${
+    stat(
+      "stat-installed-in-builds",
+      "Installed in builds",
+      String(s.installed_in_builds),
+      "rows in a build",
+    )
+  }
+  </div>
+</div>`;
+}
+
 function homePage(db: DB, typeFilter?: PartType, query?: string): string {
   const parts = listParts(db, { parent_id: null, type: typeFilter, q: query });
   const searching = query != null && query.length > 0;
@@ -456,6 +492,7 @@ function homePage(db: DB, typeFilter?: PartType, query?: string): string {
   return layout(
     "Inventory",
     `
+    ${summaryCard(db)}
     ${quickAddForm()}
     <div class="card">
       <h2>Parts &amp; Assemblies</h2>
