@@ -432,19 +432,25 @@ function stockPage(db: DB): string {
   );
 }
 
-function homePage(db: DB, typeFilter?: PartType): string {
-  const parts = listParts(db, { parent_id: null, type: typeFilter });
+function homePage(db: DB, typeFilter?: PartType, query?: string): string {
+  const parts = listParts(db, { parent_id: null, type: typeFilter, q: query });
+  const searching = query != null && query.length > 0;
   const rows = parts.length > 0
     ? parts.map(partRow).join("")
+    : searching
+    ? `<p class="empty">No parts match &ldquo;${escape(query)}&rdquo;.</p>`
     : `<p class="empty">No parts yet — add something above.</p>`;
 
   const filterBar = `
 <form method="GET" action="/" style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-  <label style="margin:0;color:#8b949e;font-size:.875rem">Filter by type:</label>
+  <input type="search" name="q" value="${
+    escape(query ?? "")
+  }" placeholder="Search parts…" aria-label="Search parts" style="width:auto;min-width:180px">
   <select name="type" onchange="this.form.submit()" style="width:auto">
     ${typeOptions(typeFilter ?? null)}
   </select>
-  ${typeFilter ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
+  <button type="submit" class="btn btn-sm">Search</button>
+  ${typeFilter || searching ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
 </form>`;
 
   return layout(
@@ -868,8 +874,13 @@ export function makeHandler(db: DB) {
 
     // GET /
     if (path === "/" && req.method === "GET") {
-      const typeParam = url.searchParams.get("type") as PartType | null;
-      return new Response(homePage(db, typeParam ?? undefined), {
+      // Empty params mean "no filter" — URLSearchParams.get returns "" for ?type=
+      // and ?q=, which nullish coalescing does not catch.
+      const typeParam = url.searchParams.get("type");
+      const type = typeParam ? (typeParam as PartType) : undefined;
+      const qParam = url.searchParams.get("q");
+      const q = qParam ? qParam : undefined;
+      return new Response(homePage(db, type, q), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
