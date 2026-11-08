@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { makeHandler } from "../main.ts";
-import { createPart, initDb } from "../db.ts";
+import { assembleBuild, createPart, initDb } from "../db.ts";
 
 function makeApp() {
   const db = initDb(":memory:");
@@ -122,6 +122,25 @@ Deno.test("summary reports low stock by summed quantity per name", async () => {
 
   // one distinct name at or below the threshold
   assertEquals(stat(html, "stat-low-stock"), "1");
+});
+
+Deno.test("summary keeps inventory value when priced stock is installed via New Build", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, {
+    name: ALPHA,
+    quantity: 8,
+    status: "unused",
+    type: "motor",
+    purchase_price: 24.99,
+  });
+  assembleBuild(db, { name: "LionBee", selections: [{ part_id: motorId, qty: 4 }] });
+
+  const res = await handler(new Request("http://localhost/"));
+  const html = await res.text();
+
+  // 8 units at $24.99 remain in inventory — installing 4 into a build must
+  // not drop the value from $199.92 to $99.96.
+  assertEquals(stat(html, "stat-inventory-value"), "$199.92");
 });
 
 Deno.test("summary renders on an empty database", async () => {
