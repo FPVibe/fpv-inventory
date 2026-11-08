@@ -549,7 +549,14 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
       db.query(
         `INSERT INTO parts (name, type, status, specs, quantity, parent_id, purchase_price)
          VALUES (?, ?, 'in-use', ?, ?, ?, ?)`,
-        [part.name, part.type ?? null, part.specs ?? null, sel.qty, craftId, part.purchase_price ?? null],
+        [
+          part.name,
+          part.type ?? null,
+          part.specs ?? null,
+          sel.qty,
+          craftId,
+          part.purchase_price ?? null,
+        ],
       );
       const childId = db.lastInsertRowId;
 

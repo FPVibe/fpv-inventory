@@ -212,7 +212,7 @@ function layout(title: string, body: string): string {
         .stat { display: flex; flex-direction: column; gap: 2px; }
         .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #8b949e; }
         .stat-value { font-size: 1.5rem; font-weight: 600; color: #e6edf3; line-height: 1.2; }
-        .stat-hint { font-size: .7rem; color: #6e7681; }
+        .stat-hint { font-size: .7rem; color: #8b949e; }
         .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
       </style>
       </head>
@@ -285,7 +285,7 @@ function fullAddForm(parentId?: number): string {
           <textarea name="notes" rows="3" placeholder="e.g. burned in, running on 4S only"></textarea>
         </div>
         <div class="field">
-          <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+          <label>Specs <span style="color:#8b949e;font-weight:400">(raw spec block from product listing)</span></label>
           <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W"></textarea>
         </div>
         <hr style="border-color:#30363d;margin:12px 0">
@@ -778,7 +778,7 @@ async function partEditPage(db: DB, id: number): Promise<string | null> {
           <textarea name="notes" rows="2">${escape(part.notes ?? "")}</textarea>
         </div>
         <div class="field">
-          <label>Specs <span style="color:#6e7681;font-weight:400">(raw spec block from product listing)</span></label>
+          <label>Specs <span style="color:#8b949e;font-weight:400">(raw spec block from product listing)</span></label>
           <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem" placeholder="e.g. KV: 2400&#10;Weight: 31.5g&#10;Max Power: 1100W">${
       escape(part.specs ?? "")
     }</textarea>
