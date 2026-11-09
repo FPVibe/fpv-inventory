@@ -61,14 +61,19 @@ Deno.test("GET /?q= renders a search input holding the current term", async () =
 
 Deno.test("GET /?q= combines with the type filter", async () => {
   const { db, handler } = makeApp();
+  // Passes both filters — must be shown.
   createPart(db, { name: ALPHA, quantity: 2, status: "unused", type: "motor" });
-  createPart(db, { name: BETA, quantity: 1, status: "unused", type: "frame" });
+  // Matches the name but not the type — catches an ignored type filter.
+  createPart(db, { name: "Cinder Camera", quantity: 1, status: "unused", type: "camera" });
+  // Matches the type but not the name — catches an ignored name filter.
+  createPart(db, { name: "Halcyon Motor", quantity: 1, status: "unused", type: "motor" });
 
   const res = await handler(new Request("http://localhost/?q=Cinder&type=motor"));
   const html = await res.text();
 
   assertStringIncludes(html, ALPHA);
-  assertEquals(html.includes(BETA), false);
+  assertEquals(html.includes("Cinder Camera"), false);
+  assertEquals(html.includes("Halcyon Motor"), false);
 });
 
 Deno.test("GET /?q= does not match child components (top-level list only)", async () => {

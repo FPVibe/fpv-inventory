@@ -124,6 +124,19 @@ Deno.test("summary reports low stock by summed quantity per name", async () => {
   assertEquals(stat(html, "stat-low-stock"), "1");
 });
 
+Deno.test("summary keeps same-name parts of different types as separate low-stock groups", async () => {
+  const { db, handler } = makeApp();
+  // Camera at quantity 2 is below the threshold; the VTX of the same name at
+  // 8 must not mask it by being summed into one group.
+  createPart(db, { name: "Combo Relay", quantity: 2, status: "unused", type: "camera" });
+  createPart(db, { name: "Combo Relay", quantity: 8, status: "unused", type: "vtx" });
+
+  const res = await handler(new Request("http://localhost/"));
+  const html = await res.text();
+
+  assertEquals(stat(html, "stat-low-stock"), "1");
+});
+
 Deno.test("summary keeps inventory value when priced stock is installed via New Build", async () => {
   const { db, handler } = makeApp();
   const motorId = createPart(db, {
