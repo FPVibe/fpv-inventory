@@ -1,4 +1,4 @@
-import { DB, type PartType } from "./db.ts";
+import { DB } from "./db.ts";
 
 export interface AllocationBuild {
   build_id: number;
@@ -14,52 +14,40 @@ export interface AllocationResult {
 }
 
 /**
- * Compute stock allocation for a logical part group (exact name + type match).
+ * Compute stock allocation for a part.
  *
- * - on_hand: total quantity across ALL rows matching name+type (stock + installed)
- * - allocated: quantity of rows whose parent_id points at a type='craft' part
+ * A part's `quantity` is the total owned. The `build_parts` join records how
+ * many of it each build uses, so:
+ *
+ * - on_hand: the part's quantity (total owned)
+ * - allocated: sum of the BOM quantities across all builds using this part
  * - free: on_hand − allocated
- * - builds: list of crafts that have this part installed, with qty per build
+ * - builds: the builds that use this part, with the quantity in each
+ *
+ * The join is on `part_id`, so renaming a part cannot break its allocation,
+ * and two different parts that happen to share a name are never merged.
  */
-export function allocationForGroup(
-  db: DB,
-  name: string,
-  type: PartType | null,
-): AllocationResult {
-  // Total quantity across all rows matching name + type
-  type TotalRow = [number];
-  const typeClause = type === null ? "type IS NULL" : "type = ?";
-  const totalParams: (string | null)[] = type === null ? [name] : [name, type];
-
-  const totalRows = db.query<TotalRow>(
-    `SELECT COALESCE(SUM(quantity), 0) FROM parts WHERE name = ? AND ${typeClause}`,
-    totalParams,
+export function allocationForPart(db: DB, partId: number): AllocationResult {
+  const onHandRows = db.query<[number]>(
+    "SELECT COALESCE(quantity, 0) FROM parts WHERE id = ?",
+    [partId],
   );
-  const on_hand = (totalRows[0]?.[0] as number) ?? 0;
+  const on_hand = onHandRows[0]?.[0] ?? 0;
 
-  // Quantity installed in craft builds (parent_id → a part with type='craft')
-  const allocParams: (string | null)[] = type === null ? [name] : [name, type];
   const allocRows = db.query<[number]>(
-    `SELECT COALESCE(SUM(p.quantity), 0)
-     FROM parts p
-     JOIN parts parent ON parent.id = p.parent_id AND parent.type = 'craft'
-     WHERE p.name = ? AND p.${typeClause}`,
-    allocParams,
+    "SELECT COALESCE(SUM(quantity), 0) FROM build_parts WHERE part_id = ?",
+    [partId],
   );
-  const allocated = (allocRows[0]?.[0] as number) ?? 0;
+  const allocated = allocRows[0]?.[0] ?? 0;
 
-  // Per-build breakdown
-  const buildParams: (string | null)[] = type === null ? [name] : [name, type];
   const buildRows = db.query<[number, string, number]>(
-    `SELECT parent.id, parent.name, SUM(p.quantity) AS qty
-     FROM parts p
-     JOIN parts parent ON parent.id = p.parent_id AND parent.type = 'craft'
-     WHERE p.name = ? AND p.${typeClause}
-     GROUP BY parent.id
-     ORDER BY parent.name`,
-    buildParams,
+    `SELECT b.id, b.name, SUM(bp.quantity) AS qty
+     FROM build_parts bp JOIN builds b ON b.id = bp.build_id
+     WHERE bp.part_id = ?
+     GROUP BY b.id, b.name
+     ORDER BY b.name`,
+    [partId],
   );
-
   const builds: AllocationBuild[] = buildRows.map(([build_id, build_name, qty]) => ({
     build_id,
     build_name,

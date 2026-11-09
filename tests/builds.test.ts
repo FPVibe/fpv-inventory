@@ -53,14 +53,14 @@ Deno.test("a build lists its components with quantities and roles", () => {
   assertEquals(buildId > 0, true);
 });
 
-Deno.test("getBuild returns components with part details", () => {
+Deno.test("getBuild returns a build, and listBuildComponents returns its BOM", () => {
   const db = initDb(":memory:");
   const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
 
   const build = getBuild(db, buildId);
   assertEquals(build !== null, true);
   assertEquals(build!.name, "LionBee");
-  assertEquals(build!.components.length, 0);
+  assertEquals(listBuildComponents(db, buildId).length, 0);
 });
 
 Deno.test("listBuildComponents returns an empty array for a build with no components", () => {

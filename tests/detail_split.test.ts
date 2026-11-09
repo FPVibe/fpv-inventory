@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { makeHandler } from "../main.ts";
-import { createPart, getPart, initDb } from "../db.ts";
+import { addBuildComponent, createBuild, createPart, getPart, initDb } from "../db.ts";
 
 function makeApp() {
   const db = initDb(":memory:");
@@ -45,14 +45,14 @@ Deno.test("GET /parts/:id does not render the edit form inline", async () => {
   assertEquals(html.includes('name="purchase_price"'), false);
 });
 
-Deno.test("GET /parts/:id does not render the move form inline", async () => {
+Deno.test("GET /parts/:id does not render the install form inline", async () => {
   const { db, handler } = makeApp();
   const id = createPart(db, { name: ALPHA, quantity: 4, status: "unused", type: "motor" });
 
   const res = await handler(new Request(`http://localhost/parts/${id}`));
   const html = await res.text();
 
-  assertEquals(html.includes('name="new_parent_id"'), false);
+  assertEquals(html.includes('name="build_id"'), false);
 });
 
 Deno.test("GET /parts/:id does not render the photo upload form inline", async () => {
@@ -65,7 +65,7 @@ Deno.test("GET /parts/:id does not render the photo upload form inline", async (
   assertEquals(html.includes('type="file"'), false);
 });
 
-Deno.test("GET /parts/:id links to the edit, move and photo views", async () => {
+Deno.test("GET /parts/:id links to the edit, install and photo views", async () => {
   const { db, handler } = makeApp();
   const id = createPart(db, { name: ALPHA, quantity: 4, status: "unused", type: "motor" });
 
@@ -73,31 +73,27 @@ Deno.test("GET /parts/:id links to the edit, move and photo views", async () => 
   const html = await res.text();
 
   assertStringIncludes(html, `/parts/${id}/edit`);
-  assertStringIncludes(html, `/parts/${id}/move`);
+  assertStringIncludes(html, `/parts/${id}/install`);
   assertStringIncludes(html, `/parts/${id}/photo`);
 });
 
-Deno.test("GET /parts/:id still shows history and components", async () => {
+Deno.test("GET /parts/:id still shows history and allocation", async () => {
   const { db, handler } = makeApp();
-  const buildId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
   const id = createPart(db, {
     name: ALPHA,
     quantity: 4,
     status: "unused",
     type: "motor",
-    parent_id: buildId,
   });
+  addBuildComponent(db, buildId, id, 2);
 
   const res = await handler(new Request(`http://localhost/parts/${id}`));
   const html = await res.text();
 
   assertStringIncludes(html, "History");
-  assertStringIncludes(html, "Components of");
+  assertStringIncludes(html, "Allocation");
+  assertStringIncludes(html, "LionBee");
 });
 
 Deno.test("GET /parts/:id 404s for an unknown id", async () => {
@@ -179,25 +175,25 @@ Deno.test("GET /parts/:id/edit 404s for an unknown id", async () => {
   assertEquals(res.status, 404);
 });
 
-// ─── Move view (#80) ──────────────────────────────────────────────────────────
+// ─── Install view (#80) ───────────────────────────────────────────────────────
 
-Deno.test("GET /parts/:id/move renders the move form only", async () => {
+Deno.test("GET /parts/:id/install renders the install form only", async () => {
   const { db, handler } = makeApp();
   const id = createPart(db, { name: ALPHA, quantity: 4, status: "unused", type: "motor" });
 
-  const res = await handler(new Request(`http://localhost/parts/${id}/move`));
+  const res = await handler(new Request(`http://localhost/parts/${id}/install`));
   const html = await res.text();
 
   assertEquals(res.status, 200);
-  assertStringIncludes(html, 'name="new_parent_id"');
+  assertStringIncludes(html, 'name="build_id"');
   assertEquals(html.includes(`action="/parts/${id}/update"`), false);
   assertEquals(html.includes(`action="/parts/${id}/photo"`), false);
 });
 
-Deno.test("GET /parts/:id/move 404s for an unknown id", async () => {
+Deno.test("GET /parts/:id/install 404s for an unknown id", async () => {
   const { handler } = makeApp();
 
-  const res = await handler(new Request("http://localhost/parts/9999/move"));
+  const res = await handler(new Request("http://localhost/parts/9999/install"));
 
   assertEquals(res.status, 404);
 });

@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { makeHandler } from "../main.ts";
-import { createPart, initDb } from "../db.ts";
+import { addBuildComponent, createBuild, createPart, initDb } from "../db.ts";
 
 function makeApp() {
   const db = initDb(":memory:");
@@ -76,21 +76,17 @@ Deno.test("GET /?q= combines with the type filter", async () => {
   assertEquals(html.includes("Halcyon Motor"), false);
 });
 
-Deno.test("GET /?q= does not match child components (top-level list only)", async () => {
+Deno.test("GET /?q= matches a part installed in a build", async () => {
   const { db, handler } = makeApp();
-  const buildId = createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
-  createPart(db, {
-    name: ALPHA,
-    quantity: 4,
-    status: "unused",
-    type: "motor",
-    parent_id: buildId,
-  });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  const partId = createPart(db, { name: ALPHA, quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, partId, 2);
 
   const res = await handler(new Request("http://localhost/?q=Cinder"));
   const html = await res.text();
 
-  assertEquals(html.includes(ALPHA), false);
+  // A part is a part whether or not it is installed somewhere
+  assertStringIncludes(html, ALPHA);
 });
 
 // ─── Empty query params must not filter (#82) ─────────────────────────────────
