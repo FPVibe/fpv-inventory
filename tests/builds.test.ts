@@ -1,6 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import {
+  type BuildComponent,
   createBuild,
   getBuild,
   initDb,
@@ -8,7 +9,6 @@ import {
   listBuilds,
   listParts,
   migrateToBuildsModel,
-  type BuildComponent,
 } from "../db.ts";
 
 // ─── Build entities (#83) ─────────────────────────────────────────────────────

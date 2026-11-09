@@ -3,7 +3,7 @@
  * Tests for INV-11: Allocation surfacing in part/build UI
  */
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createPart, initDb } from "../db.ts";
+import { addBuildComponent, createBuild, createPart, initDb } from "../db.ts";
 import { makeHandler } from "../main.ts";
 
 function makeApp() {
@@ -46,9 +46,9 @@ Deno.test("GET /stock shows aggregated quantities per type/status (fixture data)
   assertStringIncludes(body.toLowerCase(), "frame");
 });
 
-Deno.test("GET /stock excludes craft-type rows", async () => {
+Deno.test("GET /stock excludes builds (builds are not stock rows)", async () => {
   const { db, handler } = makeApp();
-  createPart(db, { name: "My Quad", quantity: 1, status: "in-use", type: "craft" });
+  createBuild(db, { name: "My Quad", status: "in-use" });
   createPart(db, { name: "0802 Motor", quantity: 4, status: "unused", type: "motor" });
 
   const res = await handler(new Request("http://localhost/stock"));
@@ -56,7 +56,7 @@ Deno.test("GET /stock excludes craft-type rows", async () => {
 
   // Motor should appear in stock view
   assertStringIncludes(body.toLowerCase(), "motor");
-  // Craft ("My Quad") must NOT appear — the whole point of the filter
+  // Builds are not parts — "My Quad" must NOT appear in the stock view
   assertEquals(body.includes("My Quad"), false);
 });
 
@@ -78,27 +78,17 @@ Deno.test("GET /stock has a nav link back to home", async () => {
 
 // ─── INV-11: Allocation surfacing in part detail page ─────────────────────────
 
-Deno.test("part detail shows allocation summary for non-craft stock parts", async () => {
+Deno.test("part detail shows allocation summary for stock parts", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  // 12 owned total, 4 of them installed in LionBee
   const stockId = createPart(db, {
     name: "0702 Motor",
-    quantity: 8,
+    quantity: 12,
     status: "unused",
     type: "motor",
   });
-  createPart(db, {
-    name: "0702 Motor",
-    quantity: 4,
-    status: "in-use",
-    type: "motor",
-    parent_id: craftId,
-  });
+  addBuildComponent(db, buildId, stockId, 4);
 
   const res = await handler(new Request(`http://localhost/parts/${stockId}`));
   const body = await res.text();
@@ -113,24 +103,19 @@ Deno.test("part detail shows allocation summary for non-craft stock parts", asyn
 
 Deno.test("part detail links to build from allocation section", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
   const stockId = createPart(db, {
     name: "0702 Motor",
     quantity: 4,
     status: "in-use",
     type: "motor",
-    parent_id: craftId,
   });
+  addBuildComponent(db, buildId, stockId, 4);
 
   const res = await handler(new Request(`http://localhost/parts/${stockId}`));
   const body = await res.text();
-  // Should have a link to the craft build page
-  assertStringIncludes(body, `/parts/${craftId}`);
+  // Should have a link to the build detail page
+  assertStringIncludes(body, `/builds/${buildId}`);
 });
 
 Deno.test("part detail shows allocation for a part with no builds (free = on_hand)", async () => {
@@ -151,26 +136,19 @@ Deno.test("part detail shows allocation for a part with no builds (free = on_han
 
 // ─── INV-11: Allocation surfacing in build detail page ────────────────────────
 
-Deno.test("build detail (craft part page) shows BOM table with allocation columns", async () => {
+Deno.test("build detail page shows BOM table with allocation columns", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
-  // 8 loose motors in stock
-  createPart(db, { name: "0702 Motor", quantity: 8, status: "unused", type: "motor" });
-  // 4 installed in this build
-  createPart(db, {
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  // 12 motors owned, 4 of them installed in this build
+  const motorId = createPart(db, {
     name: "0702 Motor",
-    quantity: 4,
-    status: "in-use",
+    quantity: 12,
+    status: "unused",
     type: "motor",
-    parent_id: craftId,
   });
+  addBuildComponent(db, buildId, motorId, 4);
 
-  const res = await handler(new Request(`http://localhost/parts/${craftId}`));
+  const res = await handler(new Request(`http://localhost/builds/${buildId}`));
   const body = await res.text();
 
   // BOM should show on-hand / allocated / free

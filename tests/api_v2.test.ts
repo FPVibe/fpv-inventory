@@ -299,18 +299,18 @@ Deno.test("GET /api/stock returns aggregated type×status rows", async () => {
   assertEquals(frameUnused!.count, 1);
 });
 
-Deno.test("GET /api/stock includes craft and gear rows", async () => {
+Deno.test("GET /api/stock includes gear rows; builds are not stock rows", async () => {
   const { db, handler } = makeApp();
-  createPart(db, { name: "My Quad", quantity: 1, status: "in-use", type: "craft" });
+  createBuild(db, { name: "My Quad", status: "in-use" });
   createPart(db, { name: "Goggles", quantity: 1, status: "unused", type: "gear" });
 
   const res = await handler(new Request("http://localhost/api/stock"));
   const body: Array<{ type: string; status: string }> = await res.json();
 
-  const craftRow = body.find((r) => r.type === "craft");
-  assertExists(craftRow);
   const gearRow = body.find((r) => r.type === "gear");
   assertExists(gearRow);
+  // Builds are not parts — there is no craft type and no row for the build
+  assertEquals(body.find((r) => r.type === "craft"), undefined);
 });
 
 Deno.test("GET /api/stock rows with null type return type: null", async () => {

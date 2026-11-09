@@ -1,5 +1,12 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { addBuildComponent, createBuild, createPart, initDb, listBuildComponents, listParts } from "../db.ts";
+import {
+  addBuildComponent,
+  createBuild,
+  createPart,
+  initDb,
+  listBuildComponents,
+  listParts,
+} from "../db.ts";
 import { makeHandler } from "../main.ts";
 
 function makeApp() {

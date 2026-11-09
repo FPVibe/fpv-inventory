@@ -225,10 +225,12 @@ export function migrateToBuildsModel(db: DB): void {
     // Stock rows keyed by name+type, so an installed copy can find the row it
     // was drawn from. This mirrors how the v1 allocation engine grouped them.
     const stockByNameType = new Map<string, { id: number; quantity: number }>();
-    for (const row of db.query<[number, string, string | null, number]>(
-      `SELECT id, name, type, quantity FROM parts
+    for (
+      const row of db.query<[number, string, string | null, number]>(
+        `SELECT id, name, type, quantity FROM parts
        WHERE parent_id IS NULL AND type <> 'craft'`,
-    )) {
+      )
+    ) {
       const key = `${row[2] ?? ""}\u0000${row[1]}`;
       const existing = stockByNameType.get(key);
       if (!existing) {

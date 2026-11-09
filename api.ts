@@ -1,4 +1,5 @@
 import {
+  type BuildFilter,
   DB,
   getBuild,
   getBuildHistory,
@@ -7,7 +8,6 @@ import {
   listBuildComponents,
   listBuilds,
   listParts,
-  type BuildFilter,
   type PartFilter,
   type PartStatus,
   type PartType,

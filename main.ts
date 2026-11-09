@@ -12,12 +12,12 @@ import {
   listBuildComponents,
   listBuilds,
   listParts,
-  removeBuildComponent,
   type Part,
   type PartStatus,
   type PartType,
   queryInventorySummary,
   queryStockRows,
+  removeBuildComponent,
   updatePart,
 } from "./db.ts";
 import { allocationForPart } from "./allocation.ts";
@@ -733,8 +733,8 @@ async function buildDetailPage(db: DB, id: number): Promise<string | null> {
     build.name,
     `
     <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> › ${
-    escape(build.name)
-  }</div>
+      escape(build.name)
+    }</div>
 
     <div class="grid-2">
       <div class="card">
@@ -1450,7 +1450,7 @@ export function makeHandler(db: DB) {
         });
       }
 
-      return new Response(null, { status: 303, headers: { Location: `/parts/${craftId}` } });
+      return new Response(null, { status: 303, headers: { Location: `/builds/${craftId}` } });
     }
 
     return new Response("Not Found", { status: 404 });
