@@ -586,9 +586,10 @@ export interface InventorySummary {
  * type rather than by parent_id, so a top-level craft is counted as a build
  * and not as a part.
  *
- * `low_stock` counts distinct names whose summed quantity across all their
- * rows is at or below the threshold — a part split over several rows is
- * still one part.
+ * `low_stock` counts distinct name+type groups whose summed quantity across
+ * all their rows is at or below the threshold — a part split over several
+ * rows is still one part, and same-name parts of different types are
+ * separate groups (matching `allocationForGroup`).
  *
  * `installed_in_builds` counts rows whose parent_id points at a craft.
  */
@@ -603,7 +604,7 @@ export function queryInventorySummary(db: DB, lowStockThreshold = 3): InventoryS
   const lowStock = db.query<LowStockRow>(
     `SELECT COUNT(*) FROM (
        SELECT name FROM parts WHERE type IS NULL OR type <> 'craft'
-       GROUP BY name HAVING SUM(quantity) <= ?
+       GROUP BY name, type HAVING SUM(quantity) <= ?
      )`,
     [lowStockThreshold],
   )[0]?.[0] ?? 0;
