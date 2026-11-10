@@ -566,6 +566,18 @@ export function updatePart(db: DB, id: number, input: UpdatePartInput): void {
   const current = getPart(db, id);
   if (!current) throw new Error(`Part ${id} not found`);
 
+  if (input.quantity !== undefined) {
+    const allocated = db.query<[number]>(
+      "SELECT COALESCE(SUM(quantity), 0) FROM build_parts WHERE part_id = ?",
+      [id],
+    )[0]?.[0] ?? 0;
+    if (input.quantity < allocated) {
+      throw new Error(
+        `Cannot reduce quantity below the ${allocated} allocated to builds`,
+      );
+    }
+  }
+
   const name = input.name ?? current.name;
   const status = input.status ?? current.status;
   const type = "type" in input ? (input.type ?? null) : current.type;
@@ -843,7 +855,19 @@ export function addBuildComponent(
 
 /** Remove a single component row from a build (`build_parts.id`). */
 export function removeBuildComponent(db: DB, buildId: number, componentId: number): void {
-  db.query("DELETE FROM build_parts WHERE id = ? AND build_id = ?", [componentId, buildId]);
+  db.transaction(() => {
+    const partId = db.query<[number]>(
+      "SELECT part_id FROM build_parts WHERE id = ? AND build_id = ?",
+      [componentId, buildId],
+    )[0]?.[0];
+    if (partId === undefined) return;
+    db.query("DELETE FROM build_parts WHERE id = ?", [componentId]);
+    db.query(
+      `INSERT INTO part_history (part_id, action, from_build_id)
+       VALUES (?, 'removed', ?)`,
+      [partId, buildId],
+    );
+  });
 }
 
 // ─── Part history ────────────────────────────────────────────────────────────

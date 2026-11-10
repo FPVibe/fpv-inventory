@@ -503,7 +503,13 @@ async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
 function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string {
   switch (entry.action) {
     case "created":
-      return "Added to inventory";
+      // Migrated v1 entries may carry the original install destination —
+      // assembleBuild recorded an installed child's first event this way.
+      return entry.to_build_id != null
+        ? `Added to inventory and installed in build #${entry.to_build_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`
+        : "Added to inventory";
     case "updated":
       return entry.old_status !== entry.new_status
         ? `Status changed: ${entry.old_status} → ${entry.new_status}`
@@ -1360,8 +1366,11 @@ export function makeHandler(db: DB) {
       for (const [key, value] of form.entries()) {
         const m = key.match(/^qty_(\d+)$/);
         if (!m) continue;
-        const qty = parseInt(value.toString(), 10);
-        if (!qty || qty < 1) continue;
+        const qty = Number(value.toString());
+        if (qty === 0) continue; // zero marks an unselected picker row
+        if (!Number.isInteger(qty) || qty < 1) {
+          return new Response("Quantities must be whole numbers ≥ 1", { status: 400 });
+        }
         selections.push({ partId: parseInt(m[1], 10), qty });
       }
       if (selections.length === 0) {
@@ -1503,10 +1512,13 @@ export function makeHandler(db: DB) {
       if (!part) return new Response("Not Found", { status: 404 });
       const form = await req.formData();
       const buildId = parseInt(form.get("build_id")?.toString() ?? "", 10);
-      const quantity = parseInt(form.get("quantity")?.toString() ?? "1", 10);
+      const quantity = Number(form.get("quantity")?.toString() ?? "1");
       const role = form.get("role")?.toString().trim() || null;
       const notes = form.get("notes")?.toString() || undefined;
       if (isNaN(buildId)) return new Response("Build is required", { status: 400 });
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        return new Response("Quantity must be a whole number ≥ 1", { status: 400 });
+      }
       try {
         addBuildComponent(db, buildId, id, quantity, role, notes);
         db.query(

@@ -106,15 +106,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "parent_id",
-            "in": "query",
-            "description": "Filter by parent assembly ID. Use 0 to get top-level parts (parent_id IS NULL). Negative or non-integer values are ignored.",
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
           }
         ],
         "responses": {
@@ -565,16 +556,18 @@
             "enum": [
               "created",
               "updated",
-              "moved"
+              "moved",
+              "installed",
+              "removed"
             ]
           },
-          "from_parent_id": {
+          "from_build_id": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "to_parent_id": {
+          "to_build_id": {
             "type": [
               "integer",
               "null"
