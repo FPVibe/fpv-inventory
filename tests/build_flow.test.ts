@@ -440,3 +440,43 @@ Deno.test("POST /builds/:id/components/add is atomic — one bad selection leave
   assertEquals(listBuildComponents(db, buildId).length, 0);
   assertEquals(freeQuantity(db, motorId), 4);
 });
+
+Deno.test("POST /builds/:id/components/add rejects non-integer quantities instead of truncating", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "2.5");
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 400);
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+});
+
+Deno.test("POST /builds/:id/components/add parses '1e1' as ten and skips zeroed picker rows", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 12, status: "unused", type: "motor" });
+  const fcId = createPart(db, { name: "FC", quantity: 1, status: "unused", type: "fc" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "1e1");
+  form.set(`qty_${fcId}`, "0"); // unselected picker row
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 303);
+  const components = listBuildComponents(db, buildId);
+  assertEquals(components.length, 1);
+  assertEquals(components[0].quantity, 10);
+});

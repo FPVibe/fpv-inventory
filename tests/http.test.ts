@@ -349,3 +349,31 @@ Deno.test("GET /builds/:id/photo renders the upload form", async () => {
   assertStringIncludes(html, `action="/builds/${buildId}/photo"`);
   assertStringIncludes(html, 'type="file"');
 });
+
+Deno.test("POST /parts/:id/install parses '1e1' as ten, not one", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 12, status: "unused" });
+  const form = new FormData();
+  form.append("build_id", String(buildId));
+  form.append("quantity", "1e1");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+  assertEquals(listBuildComponents(db, buildId)[0].quantity, 10);
+});
+
+Deno.test("POST /parts/:id/install rejects a non-integer quantity", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused" });
+  const form = new FormData();
+  form.append("build_id", String(buildId));
+  form.append("quantity", "2.5");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 400);
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+});

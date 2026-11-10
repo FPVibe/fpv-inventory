@@ -262,3 +262,19 @@ Deno.test("GET /parts/:id renders legacy 'moved' history with source, destinatio
   assertStringIncludes(html, `build #${buildId}`);
   assertStringIncludes(html, "initial install");
 });
+
+Deno.test("GET /parts/:id renders a migrated 'created' entry's installation destination", async () => {
+  const { db, handler } = makeApp();
+  const id = createPart(db, { name: ALPHA, quantity: 1, status: "unused", type: "motor" });
+  // Legacy assembleBuild recorded an installed child's initial event as
+  // 'created' with to_parent_id set; migration preserved it as to_build_id.
+  db.query(
+    "INSERT INTO part_history (part_id, action, to_build_id) VALUES (?, 'created', ?)",
+    [id, 7],
+  );
+
+  const res = await handler(new Request(`http://localhost/parts/${id}`));
+  const html = await res.text();
+
+  assertStringIncludes(html, "build #7");
+});

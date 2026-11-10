@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists, assertThrows } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
   addBuildComponent,
   createBuild,
@@ -456,4 +456,42 @@ Deno.test("initDb run twice on the same file is idempotent", async () => {
   } finally {
     await Deno.remove(path);
   }
+});
+
+Deno.test("updatePart rejects a quantity below the total allocated to builds", () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  assertThrows(() => updatePart(db, motorId, { quantity: 3 }), Error);
+  // The update is rejected wholesale — the part still shows all 4 owned.
+  assertEquals(getPart(db, motorId)!.quantity, 4);
+  db.close();
+});
+
+Deno.test("updatePart accepts a quantity equal to the allocated total", () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  updatePart(db, motorId, { quantity: 4 });
+  assertEquals(getPart(db, motorId)!.quantity, 4);
+  db.close();
+});
+
+Deno.test("removeBuildComponent records a 'removed' history entry with from_build_id", () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  removeBuildComponent(db, buildId, listBuildComponents(db, buildId)[0].id);
+
+  const history = getPartHistory(db, motorId);
+  const last = history[history.length - 1];
+  assertEquals(last.action, "removed");
+  assertEquals(last.from_build_id, buildId);
+  db.close();
 });
