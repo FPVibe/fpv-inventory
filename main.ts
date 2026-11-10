@@ -711,7 +711,7 @@ async function buildDetailPage(db: DB, id: number): Promise<string | null> {
           <td style="padding:8px 0;text-align:right">${alloc.free}</td>
           <td style="padding:8px 0;text-align:right">
             <form method="POST" action="/builds/${id}/components/remove">
-              <input type="hidden" name="part_id" value="${c.part_id}">
+              <input type="hidden" name="component_id" value="${c.id}">
               <button type="submit" class="btn btn-sm btn-danger">Remove</button>
             </form>
           </td>
@@ -1259,8 +1259,8 @@ export function makeHandler(db: DB) {
     if (buildRemoveComponent && req.method === "POST") {
       const id = parseInt(buildRemoveComponent[1], 10);
       const form = await req.formData();
-      const partId = parseInt(form.get("part_id")?.toString() ?? "", 10);
-      if (!isNaN(partId)) removeBuildComponent(db, id, partId);
+      const componentId = parseInt(form.get("component_id")?.toString() ?? "", 10);
+      if (!isNaN(componentId)) removeBuildComponent(db, id, componentId);
       return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
     }
 

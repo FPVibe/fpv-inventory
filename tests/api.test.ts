@@ -261,6 +261,8 @@ Deno.test("GET /api/builds/:id returns the build with its components", async () 
   assertExists(body.created_at);
   assertExists(body.updated_at);
   assertEquals(body.components.length, 1);
+  assertExists(body.components[0].id);
+  delete body.components[0].id;
   assertEquals(body.components[0], {
     part_id: motorId,
     name: "0702 Motor",

@@ -50,6 +50,8 @@ export interface Build {
 
 /** One component of a build — a row in the BOM join. */
 export interface BuildComponent {
+  /** The `build_parts` row id — components of the same part in one build are distinct rows. */
+  id: number;
   part_id: number;
   name: string;
   type: PartType | null;
@@ -727,14 +729,15 @@ export function getBuild(db: DB, id: number): Build | null {
 
 /** The build's BOM — one row per component, in join order. */
 export function listBuildComponents(db: DB, buildId: number): BuildComponent[] {
-  type Row = [number, string, string | null, number, string | null, string | null];
+  type Row = [number, number, string, string | null, number, string | null, string | null];
   const rows = db.query<Row>(
-    `SELECT p.id, p.name, p.type, bp.quantity, bp.role, bp.notes
+    `SELECT bp.id, p.id, p.name, p.type, bp.quantity, bp.role, bp.notes
      FROM build_parts bp JOIN parts p ON p.id = bp.part_id
-     WHERE bp.build_id = ? ORDER BY p.name`,
+     WHERE bp.build_id = ? ORDER BY p.name, bp.id`,
     [buildId],
   );
-  return rows.map(([part_id, name, type, quantity, role, notes]) => ({
+  return rows.map(([id, part_id, name, type, quantity, role, notes]) => ({
+    id,
     part_id,
     name,
     type: type as PartType | null,
@@ -783,7 +786,15 @@ export function addBuildComponent(
     throw new Error(`quantity must be ≥ 1, got ${quantity}`);
   }
   if (!getBuild(db, buildId)) throw new Error(`Build ${buildId} not found`);
-  if (!getPart(db, partId)) throw new Error(`Part ${partId} not found`);
+  const part = getPart(db, partId);
+  if (!part) throw new Error(`Part ${partId} not found`);
+
+  const free = freeQuantity(db, partId);
+  if (free < quantity) {
+    throw new Error(
+      `Not enough free stock for "${part.name}": have ${free}, need ${quantity}`,
+    );
+  }
 
   db.query(
     `INSERT INTO build_parts (build_id, part_id, quantity, role, notes)
@@ -792,9 +803,9 @@ export function addBuildComponent(
   );
 }
 
-/** Remove a component from a build. */
-export function removeBuildComponent(db: DB, buildId: number, partId: number): void {
-  db.query("DELETE FROM build_parts WHERE build_id = ? AND part_id = ?", [buildId, partId]);
+/** Remove a single component row from a build (`build_parts.id`). */
+export function removeBuildComponent(db: DB, buildId: number, componentId: number): void {
+  db.query("DELETE FROM build_parts WHERE id = ? AND build_id = ?", [componentId, buildId]);
 }
 
 // ─── Part history ────────────────────────────────────────────────────────────

@@ -106,7 +106,7 @@ Deno.test("moving a component between builds is removeBuildComponent + addBuildC
   const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
 
   addBuildComponent(db, build1Id, motorId, 4);
-  removeBuildComponent(db, build1Id, motorId);
+  removeBuildComponent(db, build1Id, listBuildComponents(db, build1Id)[0].id);
   addBuildComponent(db, build2Id, motorId, 4, null, "Salvaged from Quad 1");
 
   assertEquals(listBuildComponents(db, build1Id).length, 0);
@@ -124,7 +124,7 @@ Deno.test("removeBuildComponent to nothing removes the part from the build (back
   const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
   addBuildComponent(db, buildId, motorId, 4);
 
-  removeBuildComponent(db, buildId, motorId);
+  removeBuildComponent(db, buildId, listBuildComponents(db, buildId)[0].id);
   assertEquals(listBuildComponents(db, buildId).length, 0);
   // The part itself still exists — removal frees it, it does not delete it.
   assertExists(getPart(db, motorId));
