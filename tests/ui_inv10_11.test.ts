@@ -157,3 +157,47 @@ Deno.test("build detail page shows BOM table with allocation columns", async () 
   assertStringIncludes(body, "4");
   assertStringIncludes(body, "8");
 });
+
+// ─── Pickers advertise free quantity, not total owned (#85 review) ───────────
+
+Deno.test("GET /builds/new caps pickers at free quantity and omits fully allocated parts", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  const goneId = createPart(db, { name: "Motor B", quantity: 2, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  addBuildComponent(db, buildId, motorId, 3); // 1 free
+  addBuildComponent(db, buildId, goneId, 2); // 0 free
+
+  const res = await handler(new Request("http://localhost/builds/new"));
+  const html = await res.text();
+
+  assertStringIncludes(html, `name="qty_${motorId}"`);
+  assertStringIncludes(html, `max="1"`);
+  assertEquals(html.includes(`name="qty_${goneId}"`), false);
+});
+
+Deno.test("GET /builds/:id/components/add caps pickers at free quantity", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  addBuildComponent(db, buildId, motorId, 3); // 1 free
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}/components/add`));
+  const html = await res.text();
+
+  assertStringIncludes(html, `max="1"`);
+  assertEquals(html.includes(`max="4"`), false);
+});
+
+Deno.test("GET /parts/:id/install caps quantity at free stock", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor A", quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  addBuildComponent(db, buildId, motorId, 3); // 1 free
+
+  const res = await handler(new Request(`http://localhost/parts/${motorId}/install`));
+  const html = await res.text();
+
+  assertStringIncludes(html, `max="1"`);
+  assertEquals(html.includes(`max="4"`), false);
+});

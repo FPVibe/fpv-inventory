@@ -418,3 +418,22 @@ Deno.test("POST /builds/from-bin over-request returns 400 and re-renders form", 
   const body = await res.text();
   assertStringIncludes(body.toLowerCase(), "not enough");
 });
+
+Deno.test("POST /builds/:id/components/add is atomic — one bad selection leaves the BOM unchanged", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  const fcId = createPart(db, { name: "FC", quantity: 1, status: "unused", type: "fc" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "2"); // valid
+  form.set(`qty_${fcId}`, "5"); // over free stock
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 500);
+  // nothing was installed — the earlier valid selection rolled back too
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+  assertEquals(freeQuantity(db, motorId), 4);
+});

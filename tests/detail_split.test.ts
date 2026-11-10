@@ -244,3 +244,21 @@ Deno.test("POST /parts/:id/update still saves edits", async () => {
   assertEquals(part?.quantity, 3);
   assertEquals(part?.notes, "smoke damage");
 });
+
+Deno.test("GET /parts/:id renders legacy 'moved' history with source, destination and notes", async () => {
+  const { db, handler } = makeApp();
+  const partId = createPart(db, { name: ALPHA, quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  // a migrated v1 entry: stock row moved into a craft
+  db.query(
+    "INSERT INTO part_history (part_id, action, from_build_id, to_build_id, notes) VALUES (?, 'moved', NULL, ?, 'initial install')",
+    [partId, buildId],
+  );
+
+  const res = await handler(new Request(`http://localhost/parts/${partId}`));
+  const html = await res.text();
+
+  assertStringIncludes(html, "Moved from");
+  assertStringIncludes(html, `build #${buildId}`);
+  assertStringIncludes(html, "initial install");
+});
