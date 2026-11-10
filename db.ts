@@ -820,7 +820,9 @@ export function getBuildHistory(db: DB, buildId: number): BuildHistoryEntry[] {
  *
  * The part's own quantity is the total owned and is NOT changed — the BOM
  * join records how many of it this build uses. Free stock is therefore
- * `quantity - (sum of quantities allocated across all builds)`.
+ * `quantity - (sum of quantities allocated across all builds)`. The install
+ * is recorded as an `installed` part-history event with `to_build_id`, so
+ * every allocation leaves a trail regardless of entry point.
  *
  * Throws if the part does not exist or the build does not exist.
  */
@@ -850,6 +852,11 @@ export function addBuildComponent(
     `INSERT INTO build_parts (build_id, part_id, quantity, role, notes)
      VALUES (?, ?, ?, ?, ?)`,
     [buildId, partId, quantity, role ?? null, notes ?? null],
+  );
+  db.query(
+    `INSERT INTO part_history (part_id, action, to_build_id, notes)
+     VALUES (?, 'installed', ?, ?)`,
+    [partId, buildId, notes ?? null],
   );
 }
 
@@ -995,10 +1002,7 @@ export function assembleBuild(db: DB, input: AssembleBuildInput): number {
     );
 
     for (const sel of input.selections) {
-      db.query(
-        `INSERT INTO build_parts (build_id, part_id, quantity) VALUES (?, ?, ?)`,
-        [buildId, sel.part_id, sel.qty],
-      );
+      addBuildComponent(db, buildId, sel.part_id, sel.qty);
     }
   });
 

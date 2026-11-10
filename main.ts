@@ -1521,11 +1521,6 @@ export function makeHandler(db: DB) {
       }
       try {
         addBuildComponent(db, buildId, id, quantity, role, notes);
-        db.query(
-          `INSERT INTO part_history (part_id, action, to_build_id, notes)
-           VALUES (?, 'installed', ?, ?)`,
-          [id, buildId, notes ?? null],
-        );
       } catch (err) {
         console.error("Failed to install part:", err);
         return new Response("Failed to install part", { status: 500 });
