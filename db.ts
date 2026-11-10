@@ -727,6 +727,44 @@ export function getBuild(db: DB, id: number): Build | null {
   };
 }
 
+export interface UpdateBuildInput {
+  name?: string;
+  status?: PartStatus;
+  class?: string | null;
+  notes?: string;
+  specs?: string;
+  photo_path?: string;
+}
+
+/** Update a build's fields; status changes are recorded in build_history. */
+export function updateBuild(db: DB, id: number, input: UpdateBuildInput): void {
+  const current = getBuild(db, id);
+  if (!current) throw new Error(`Build ${id} not found`);
+
+  const name = input.name ?? current.name;
+  const status = input.status ?? current.status;
+  const buildClass = "class" in input ? (input.class ?? null) : current.class;
+  const notes = "notes" in input ? (input.notes ?? null) : current.notes;
+  const specs = "specs" in input
+    ? (input.specs?.replace(/\r\n/g, "\n").trim() || null)
+    : current.specs;
+  const photo_path = "photo_path" in input ? (input.photo_path ?? null) : current.photo_path;
+
+  db.query(
+    `UPDATE builds SET name=?, status=?, class=?, notes=?, specs=?, photo_path=?,
+       updated_at=datetime('now')
+     WHERE id=?`,
+    [name, status, buildClass, notes, specs, photo_path, id],
+  );
+  if (status !== current.status) {
+    db.query(
+      `INSERT INTO build_history (build_id, action, old_status, new_status)
+       VALUES (?, 'updated', ?, ?)`,
+      [id, current.status, status],
+    );
+  }
+}
+
 /** The build's BOM — one row per component, in join order. */
 export function listBuildComponents(db: DB, buildId: number): BuildComponent[] {
   type Row = [number, number, string, string | null, number, string | null, string | null];

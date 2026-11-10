@@ -19,6 +19,7 @@ import {
   queryInventorySummary,
   queryStockRows,
   removeBuildComponent,
+  updateBuild,
   updatePart,
 } from "./db.ts";
 import { allocationForPart } from "./allocation.ts";
@@ -779,6 +780,10 @@ async function buildDetailPage(db: DB, id: number): Promise<string | null> {
         }</pre></div>`
         : ""
     }
+        <div class="actions">
+          <a href="/builds/${id}/edit" class="btn btn-primary btn-sm">Edit</a>
+          <a href="/builds/${id}/photo" class="btn btn-sm">Change photo</a>
+        </div>
       </div>
 
       <div>
@@ -1100,6 +1105,91 @@ function buildsNewPage(db: DB, error?: string): string {
   );
 }
 
+async function buildEditPage(db: DB, id: number): Promise<string | null> {
+  const build = getBuild(db, id);
+  if (!build) return null;
+
+  return layout(
+    `Edit ${build.name}`,
+    `
+    <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> › <a href="/builds/${id}">${
+      escape(build.name)
+    }</a> › Edit</div>
+    <div class="card">
+      <h2>Edit ${escape(build.name)}</h2>
+      <form method="POST" action="/builds/${id}/update">
+        <div class="field">
+          <label>Status</label>
+          <select name="status">
+            ${
+      (["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
+        .map((s) =>
+          `<option value="${s}"${s === build.status ? " selected" : ""}>${
+            STATUS_LABELS[s]
+          }</option>`
+        )
+        .join("")
+    }
+          </select>
+        </div>
+        <div class="field">
+          <label>Class</label>
+          <input name="class" value="${
+      escape(build.class ?? "")
+    }" placeholder="e.g. whoop, 5-inch freestyle">
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">${escape(build.notes ?? "")}</textarea>
+        </div>
+        <div class="field">
+          <label>Specs</label>
+          <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem">${
+      escape(build.specs ?? "")
+    }</textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save changes</button>
+          <a href="/builds/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
+async function buildPhotoPage(db: DB, id: number): Promise<string | null> {
+  const build = getBuild(db, id);
+  if (!build) return null;
+
+  const currentPhoto = build.photo_path
+    ? `<img src="/photos/${escape(build.photo_path)}" alt="photo" class="photo-preview">`
+    : `<p class="empty">No photo yet.</p>`;
+
+  return layout(
+    `Photo — ${build.name}`,
+    `
+    <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> › <a href="/builds/${id}">${
+      escape(build.name)
+    }</a> › Photo</div>
+    <div class="card">
+      <h2>Photo for ${escape(build.name)}</h2>
+      ${currentPhoto}
+      <form method="POST" action="/builds/${id}/photo" enctype="multipart/form-data">
+        <div class="field">
+          <label>Upload photo</label>
+          <input type="file" name="photo" accept="image/*">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Upload</button>
+          <a href="/builds/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
 export function makeHandler(db: DB) {
   return async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -1243,6 +1333,24 @@ export function makeHandler(db: DB) {
       return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
+    // GET /builds/:id/edit
+    const buildEditMatch = path.match(/^\/builds\/(\d+)\/edit$/);
+    if (buildEditMatch && req.method === "GET") {
+      const id = parseInt(buildEditMatch[1], 10);
+      const page = await buildEditPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /builds/:id/photo
+    const buildPhotoPageMatch = path.match(/^\/builds\/(\d+)\/photo$/);
+    if (buildPhotoPageMatch && req.method === "GET") {
+      const id = parseInt(buildPhotoPageMatch[1], 10);
+      const page = await buildPhotoPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
     // POST /builds/:id/components/add
     const buildAddComponentPost = path.match(/^\/builds\/(\d+)\/components\/add$/);
     if (buildAddComponentPost && req.method === "POST") {
@@ -1270,6 +1378,47 @@ export function makeHandler(db: DB) {
         console.error("Failed to add component:", err);
         return new Response("Failed to add component", { status: 500 });
       }
+      return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
+    }
+
+    // POST /builds/:id/update
+    const buildUpdateMatch = path.match(/^\/builds\/(\d+)\/update$/);
+    if (buildUpdateMatch && req.method === "POST") {
+      const id = parseInt(buildUpdateMatch[1], 10);
+      const build = getBuild(db, id);
+      if (!build) return new Response("Not Found", { status: 404 });
+      const form = await req.formData();
+      const status = form.get("status")?.toString() as PartStatus | undefined;
+      const formFields: { class?: string | null; notes?: string; specs?: string } = {};
+      if (form.has("class")) formFields.class = form.get("class")!.toString().trim() || null;
+      if (form.has("notes")) formFields.notes = form.get("notes")!.toString();
+      if (form.has("specs")) formFields.specs = form.get("specs")!.toString();
+      try {
+        updateBuild(db, id, { status, ...formFields });
+      } catch (err) {
+        console.error("Failed to update build:", err);
+        return new Response("Failed to update build", { status: 500 });
+      }
+      return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
+    }
+
+    // POST /builds/:id/photo
+    const buildPhotoUploadMatch = path.match(/^\/builds\/(\d+)\/photo$/);
+    if (buildPhotoUploadMatch && req.method === "POST") {
+      const id = parseInt(buildPhotoUploadMatch[1], 10);
+      const build = getBuild(db, id);
+      if (!build) return new Response("Not Found", { status: 404 });
+      const form = await req.formData();
+      const file = form.get("photo");
+      if (!file || !(file instanceof File) || file.size === 0) {
+        return new Response("No file provided", { status: 400 });
+      }
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const filename = `build-${id}-${Date.now()}.${ext}`;
+      await Deno.mkdir(PHOTOS_DIR, { recursive: true });
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await Deno.writeFile(`${PHOTOS_DIR}/${filename}`, bytes);
+      updateBuild(db, id, { photo_path: filename });
       return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
     }
 

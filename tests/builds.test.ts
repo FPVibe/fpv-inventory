@@ -7,6 +7,7 @@ import {
   createPart,
   freeQuantity,
   getBuild,
+  getBuildHistory,
   getPartHistory,
   initDb,
   listBuildComponents,
