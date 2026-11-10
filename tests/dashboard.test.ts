@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { makeHandler } from "../main.ts";
-import { assembleBuild, createPart, initDb } from "../db.ts";
+import { addBuildComponent, assembleBuild, createBuild, createPart, initDb } from "../db.ts";
 
 function makeApp() {
   const db = initDb(":memory:");
@@ -57,16 +57,10 @@ Deno.test("summary counts parts, quantity and inventory value", async () => {
   assertEquals(stat(html, "stat-inventory-value"), "$491.85");
 });
 
-Deno.test("summary excludes craft rows from parts, quantity and value", async () => {
+Deno.test("summary counts only parts — builds are not parts", async () => {
   const { db, handler } = makeApp();
   createPart(db, { name: ALPHA, quantity: 2, status: "unused", type: "motor", purchase_price: 10 });
-  createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-    purchase_price: 180,
-  });
+  createBuild(db, { name: "LionBee", status: "in-use" });
 
   const res = await handler(new Request("http://localhost/"));
   const html = await res.text();
@@ -88,21 +82,16 @@ Deno.test("summary counts parts with no price toward count and quantity but not 
   assertEquals(stat(html, "stat-inventory-value"), "$0.00");
 });
 
-Deno.test("summary counts rows installed in a build", async () => {
+Deno.test("summary counts components installed in builds", async () => {
   const { db, handler } = makeApp();
-  const buildId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
-  createPart(db, {
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  const partId = createPart(db, {
     name: ALPHA,
     quantity: 4,
     status: "unused",
     type: "motor",
-    parent_id: buildId,
   });
+  addBuildComponent(db, buildId, partId, 2);
 
   const res = await handler(new Request("http://localhost/"));
   const html = await res.text();
@@ -177,7 +166,7 @@ Deno.test("summary appears on the home page above the parts list", async () => {
   const html = await res.text();
 
   const summaryAt = html.indexOf('id="stat-total-parts"');
-  const listAt = html.indexOf("Parts &amp; Assemblies");
+  const listAt = html.indexOf(">Parts<");
   assertEquals(summaryAt > 0, true);
   assertEquals(listAt > 0, true);
   assertEquals(summaryAt < listAt, true);

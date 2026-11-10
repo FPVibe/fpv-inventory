@@ -1,14 +1,22 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
+  assertEquals,
+  assertExists,
+  assertThrows,
+} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import {
+  addBuildComponent,
+  createBuild,
   createPart,
   getPart,
   getPartHistory,
   initDb,
+  listBuildComponents,
   listParts,
-  movePart,
+  removeBuildComponent,
   runMigrations,
   updatePart,
 } from "../db.ts";
+import { makeHandler } from "../main.ts";
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 
 function makeTempDb(): DB {
@@ -34,7 +42,6 @@ Deno.test("createPart inserts a part and returns its id", () => {
   assertEquals(part!.name, "0702 Motor");
   assertEquals(part!.quantity, 6);
   assertEquals(part!.status, "unused");
-  assertEquals(part!.parent_id, null);
   db.close();
 });
 
@@ -47,20 +54,17 @@ Deno.test("createPart records a 'created' history entry", () => {
   db.close();
 });
 
-Deno.test("createPart supports optional fields: notes, parent_id", () => {
+Deno.test("createPart supports optional fields: notes", () => {
   const db = makeTempDb();
-  const parentId = createPart(db, { name: "Quad Alpha", quantity: 1, status: "in-use" });
-  const childId = createPart(db, {
+  const id = createPart(db, {
     name: "VTX",
     quantity: 1,
     status: "in-use",
     notes: "1.6W, pit mode set",
-    parent_id: parentId,
   });
-  const child = getPart(db, childId);
-  assertExists(child);
-  assertEquals(child!.notes, "1.6W, pit mode set");
-  assertEquals(child!.parent_id, parentId);
+  const part = getPart(db, id);
+  assertExists(part);
+  assertEquals(part!.notes, "1.6W, pit mode set");
   db.close();
 });
 
@@ -73,24 +77,16 @@ Deno.test("listParts returns all parts when no filter", () => {
   db.close();
 });
 
-Deno.test("listParts filters by parent_id", () => {
+Deno.test("listBuildComponents returns a build's parts (the v2 replacement for a parent_id filter)", () => {
   const db = makeTempDb();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
   createPart(db, { name: "Loose prop", quantity: 10, status: "unused" });
-  const children = listParts(db, { parent_id: quadId });
-  assertEquals(children.length, 1);
-  assertEquals(children[0].name, "Motor");
-  db.close();
-});
+  addBuildComponent(db, buildId, motorId, 4);
 
-Deno.test("listParts with null parent_id returns top-level parts", () => {
-  const db = makeTempDb();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
-  createPart(db, { name: "Loose prop", quantity: 10, status: "unused" });
-  const topLevel = listParts(db, { parent_id: null });
-  assertEquals(topLevel.length, 2);
+  const components = listBuildComponents(db, buildId);
+  assertEquals(components.length, 1);
+  assertEquals(components[0].name, "Motor");
   db.close();
 });
 
@@ -107,40 +103,58 @@ Deno.test("updatePart changes fields and records history", () => {
   db.close();
 });
 
-Deno.test("movePart changes parent_id and records history", () => {
+Deno.test("moving a component between builds is removeBuildComponent + addBuildComponent", () => {
   const db = makeTempDb();
-  const quad1Id = createPart(db, { name: "Quad 1", quantity: 1, status: "in-use" });
-  const quad2Id = createPart(db, { name: "Quad 2", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, {
-    name: "Motor",
-    quantity: 4,
-    status: "in-use",
-    parent_id: quad1Id,
-  });
-  movePart(db, motorId, quad2Id, "Salvaged from Quad 1");
-  const motor = getPart(db, motorId);
-  assertEquals(motor!.parent_id, quad2Id);
-  const history = getPartHistory(db, motorId);
-  const moveEvent = history.find((h) => h.action === "moved");
-  assertExists(moveEvent);
-  assertEquals(moveEvent!.from_parent_id, quad1Id);
-  assertEquals(moveEvent!.to_parent_id, quad2Id);
-  assertEquals(moveEvent!.notes, "Salvaged from Quad 1");
+  const build1Id = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const build2Id = createBuild(db, { name: "Quad 2", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
+
+  addBuildComponent(db, build1Id, motorId, 4);
+  removeBuildComponent(db, build1Id, listBuildComponents(db, build1Id)[0].id);
+  addBuildComponent(db, build2Id, motorId, 4, null, "Salvaged from Quad 1");
+
+  assertEquals(listBuildComponents(db, build1Id).length, 0);
+  const components = listBuildComponents(db, build2Id);
+  assertEquals(components.length, 1);
+  assertEquals(components[0].part_id, motorId);
+  assertEquals(components[0].quantity, 4);
+  assertEquals(components[0].notes, "Salvaged from Quad 1");
   db.close();
 });
 
-Deno.test("movePart to null removes from assembly (to spare parts)", () => {
+Deno.test("removeBuildComponent to nothing removes the part from the build (back to spare parts)", () => {
   const db = makeTempDb();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, {
-    name: "Motor",
-    quantity: 4,
-    status: "in-use",
-    parent_id: quadId,
-  });
-  movePart(db, motorId, null, "Removed from quad");
-  const motor = getPart(db, motorId);
-  assertEquals(motor!.parent_id, null);
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  removeBuildComponent(db, buildId, listBuildComponents(db, buildId)[0].id);
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+  // The part itself still exists — removal frees it, it does not delete it.
+  assertExists(getPart(db, motorId));
+  db.close();
+});
+
+Deno.test("installing a part via the UI records an 'installed' history entry with to_build_id", async () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
+  const handler = makeHandler(db);
+
+  const form = new FormData();
+  form.set("build_id", String(buildId));
+  form.set("quantity", "4");
+  form.set("notes", "Salvaged from the bin");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+
+  const history = getPartHistory(db, motorId);
+  const installedEvent = history.find((h) => h.action === "installed");
+  assertExists(installedEvent);
+  assertEquals(installedEvent!.to_build_id, buildId);
+  assertEquals(installedEvent!.notes, "Salvaged from the bin");
   db.close();
 });
 
@@ -446,4 +460,42 @@ Deno.test("initDb run twice on the same file is idempotent", async () => {
   } finally {
     await Deno.remove(path);
   }
+});
+
+Deno.test("updatePart rejects a quantity below the total allocated to builds", () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  assertThrows(() => updatePart(db, motorId, { quantity: 3 }), Error);
+  // The update is rejected wholesale — the part still shows all 4 owned.
+  assertEquals(getPart(db, motorId)!.quantity, 4);
+  db.close();
+});
+
+Deno.test("updatePart accepts a quantity equal to the allocated total", () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  updatePart(db, motorId, { quantity: 4 });
+  assertEquals(getPart(db, motorId)!.quantity, 4);
+  db.close();
+});
+
+Deno.test("removeBuildComponent records a 'removed' history entry with from_build_id", () => {
+  const db = makeTempDb();
+  const buildId = createBuild(db, { name: "Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  addBuildComponent(db, buildId, motorId, 4);
+
+  removeBuildComponent(db, buildId, listBuildComponents(db, buildId)[0].id);
+
+  const history = getPartHistory(db, motorId);
+  const last = history[history.length - 1];
+  assertEquals(last.action, "removed");
+  assertEquals(last.from_build_id, buildId);
+  db.close();
 });

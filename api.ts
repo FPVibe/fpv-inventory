@@ -1,15 +1,19 @@
 import {
+  type BuildFilter,
   DB,
   getBuild,
+  getBuildHistory,
   getPart,
   getPartHistory,
+  listBuildComponents,
+  listBuilds,
   listParts,
   type PartFilter,
   type PartStatus,
   type PartType,
   queryStockRows,
 } from "./db.ts";
-import { allocationForGroup } from "./allocation.ts";
+import { allocationForPart } from "./allocation.ts";
 import { VERSION } from "./version.ts";
 import openapiSpec from "./openapi.json" with { type: "json" };
 
@@ -38,7 +42,6 @@ const PART_TYPES: readonly PartType[] = [
   "camera",
   "antenna",
   "battery",
-  "craft",
   "gear",
   "other",
 ];
@@ -98,7 +101,6 @@ export const API_ROUTES: readonly Route[] = [
       const type = url.searchParams.get("type");
       const status = url.searchParams.get("status");
       const q = url.searchParams.get("q");
-      const parentIdParam = url.searchParams.get("parent_id");
 
       if (type !== null) {
         if (!isPartType(type)) return json([]);
@@ -109,8 +111,6 @@ export const API_ROUTES: readonly Route[] = [
         filter.status = status;
       }
       if (q !== null) filter.q = q;
-      const parentId = parseIntParam(parentIdParam);
-      if (parentId !== undefined) filter.parent_id = parentId === 0 ? null : parentId;
 
       return json(listParts(db, filter));
     },
@@ -134,7 +134,7 @@ export const API_ROUTES: readonly Route[] = [
       const id = parseInt(params[0], 10);
       const part = getPart(db, id);
       if (!part) return errorResponse("Part not found", 404);
-      const alloc = allocationForGroup(db, part.name, part.type);
+      const alloc = allocationForPart(db, id);
       return json({
         part_id: id,
         part_name: part.name,
@@ -150,7 +150,7 @@ export const API_ROUTES: readonly Route[] = [
     specPath: "/api/builds",
     match: /^\/api\/builds$/,
     handler: ({ db, url }) => {
-      const filter: PartFilter = { type: "craft", parent_id: null };
+      const filter: BuildFilter = {};
       const status = url.searchParams.get("status");
       const q = url.searchParams.get("q");
 
@@ -160,7 +160,7 @@ export const API_ROUTES: readonly Route[] = [
       }
       if (q !== null) filter.q = q;
 
-      return json(listParts(db, filter));
+      return json(listBuilds(db, filter));
     },
   },
   {
@@ -168,9 +168,10 @@ export const API_ROUTES: readonly Route[] = [
     specPath: "/api/builds/{id}",
     match: /^\/api\/builds\/(\d+)$/,
     handler: ({ db, params }) => {
-      const build = getBuild(db, parseInt(params[0], 10));
+      const id = parseInt(params[0], 10);
+      const build = getBuild(db, id);
       if (!build) return errorResponse("Build not found", 404);
-      return json(build);
+      return json({ ...build, components: listBuildComponents(db, id) });
     },
   },
   {
@@ -178,16 +179,17 @@ export const API_ROUTES: readonly Route[] = [
     specPath: "/api/builds/{id}/bom",
     match: /^\/api\/builds\/(\d+)\/bom$/,
     handler: ({ db, params }) => {
-      const build = getBuild(db, parseInt(params[0], 10));
+      const id = parseInt(params[0], 10);
+      const build = getBuild(db, id);
       if (!build) return errorResponse("Build not found", 404);
-      const bom = build.children.map((child) => {
-        const alloc = allocationForGroup(db, child.name, child.type);
+      const bom = listBuildComponents(db, id).map((component) => {
+        const alloc = allocationForPart(db, component.part_id);
         return {
-          part_id: child.id,
-          part_name: child.name,
-          part_type: child.type,
-          qty_in_build: child.quantity,
-          role: null,
+          part_id: component.part_id,
+          part_name: component.name,
+          part_type: component.type,
+          qty_in_build: component.quantity,
+          role: component.role,
           on_hand: alloc.on_hand,
           allocated: alloc.allocated,
           free: alloc.free,

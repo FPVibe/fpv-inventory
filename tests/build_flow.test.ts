@@ -1,10 +1,14 @@
 /**
- * Tests for INV-13: From-the-bin guided build flow
+ * Tests for INV-13: From-the-bin guided build flow (v2 builds model)
  *
  * Covers:
  *  - assembleBuild() db function
  *  - GET /builds/new UI
  *  - POST /builds/from-bin handler
+ *
+ * v2 semantics: a part's quantity is the total owned and is conserved —
+ * assembling a build records the allocation in the build_parts join instead
+ * of decrementing stock rows and creating child part rows.
  */
 import {
   assertEquals,
@@ -12,9 +16,21 @@ import {
   assertStringIncludes,
   assertThrows,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createPart, getPart, getPartHistory, initDb, listParts } from "../db.ts";
-import { assembleBuild } from "../db.ts";
-import { allocationForGroup } from "../allocation.ts";
+import {
+  addBuildComponent,
+  assembleBuild,
+  createBuild,
+  createPart,
+  freeQuantity,
+  getBuild,
+  getBuildHistory,
+  getPart,
+  getPartHistory,
+  initDb,
+  listBuildComponents,
+  listBuilds,
+} from "../db.ts";
+import { allocationForPart } from "../allocation.ts";
 import { makeHandler } from "../main.ts";
 
 function makeDb() {
@@ -28,7 +44,7 @@ function makeApp() {
 
 // ─── assembleBuild — happy path ───────────────────────────────────────────────
 
-Deno.test("assembleBuild creates a craft with correct child rows", () => {
+Deno.test("assembleBuild creates a build with the selected components", () => {
   const db = makeDb();
   // 12 motors, 2 FCs
   const motorId = createPart(db, {
@@ -40,7 +56,7 @@ Deno.test("assembleBuild creates a craft with correct child rows", () => {
   });
   const fcId = createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
 
-  const craftId = assembleBuild(db, {
+  const buildId = assembleBuild(db, {
     name: "LionBee Build",
     notes: "First build",
     selections: [
@@ -49,36 +65,30 @@ Deno.test("assembleBuild creates a craft with correct child rows", () => {
     ],
   });
 
-  // Craft was created
-  const craft = getPart(db, craftId);
-  assertExists(craft);
-  assertEquals(craft!.name, "LionBee Build");
-  assertEquals(craft!.type, "craft");
-  assertEquals(craft!.status, "in-use");
-  assertEquals(craft!.quantity, 1);
-  assertEquals(craft!.parent_id, null);
-  assertEquals(craft!.notes, "First build");
+  // Build was created — it is a build, not a part
+  const build = getBuild(db, buildId);
+  assertExists(build);
+  assertEquals(build!.name, "LionBee Build");
+  assertEquals(build!.status, "in-use");
+  assertEquals(build!.notes, "First build");
 
-  // Craft has 2 children (motor + FC)
-  const children = listParts(db, { parent_id: craftId });
-  assertEquals(children.length, 2);
+  // Build has 2 components (motor + FC)
+  const components = listBuildComponents(db, buildId);
+  assertEquals(components.length, 2);
 
-  const motorChild = children.find((c) => c.type === "motor");
-  assertExists(motorChild);
-  assertEquals(motorChild!.name, "0702 Motor");
-  assertEquals(motorChild!.quantity, 4);
-  assertEquals(motorChild!.status, "in-use");
-  assertEquals(motorChild!.parent_id, craftId);
-  assertEquals(motorChild!.specs, "KV: 27000"); // specs copied
+  const motorComponent = components.find((c) => c.type === "motor");
+  assertExists(motorComponent);
+  assertEquals(motorComponent!.name, "0702 Motor");
+  assertEquals(motorComponent!.quantity, 4);
 
-  const fcChild = children.find((c) => c.type === "fc");
-  assertExists(fcChild);
-  assertEquals(fcChild!.name, "FC-F4");
-  assertEquals(fcChild!.quantity, 1);
+  const fcComponent = components.find((c) => c.type === "fc");
+  assertExists(fcComponent);
+  assertEquals(fcComponent!.name, "FC-F4");
+  assertEquals(fcComponent!.quantity, 1);
   db.close();
 });
 
-Deno.test("assembleBuild decrements stock rows by the selected quantity", () => {
+Deno.test("assembleBuild does not decrement stock — quantity is conserved, allocation is recorded", () => {
   const db = makeDb();
   const motorId = createPart(db, {
     name: "0702 Motor",
@@ -88,7 +98,7 @@ Deno.test("assembleBuild decrements stock rows by the selected quantity", () => 
   });
   const fcId = createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
 
-  assembleBuild(db, {
+  const buildId = assembleBuild(db, {
     name: "LionBee",
     selections: [
       { part_id: motorId, qty: 4 },
@@ -96,15 +106,21 @@ Deno.test("assembleBuild decrements stock rows by the selected quantity", () => 
     ],
   });
 
+  // The part's quantity is the total owned — unchanged by assembly
   const motor = getPart(db, motorId);
-  assertEquals(motor!.quantity, 8); // 12 - 4
-
+  assertEquals(motor!.quantity, 12);
   const fc = getPart(db, fcId);
-  assertEquals(fc!.quantity, 1); // 2 - 1
+  assertEquals(fc!.quantity, 2);
+
+  // The allocation lives in the BOM join
+  const motorComponents = listBuildComponents(db, buildId).filter((c) => c.part_id === motorId);
+  assertEquals(motorComponents.length, 1);
+  assertEquals(motorComponents[0].quantity, 4);
+  assertEquals(freeQuantity(db, motorId), 8); // 12 owned - 4 installed
   db.close();
 });
 
-Deno.test("assembleBuild stock rows kept even at quantity 0", () => {
+Deno.test("assembleBuild: a fully allocated part keeps its row with free quantity 0", () => {
   const db = makeDb();
   const motorId = createPart(db, {
     name: "0702 Motor",
@@ -120,11 +136,12 @@ Deno.test("assembleBuild stock rows kept even at quantity 0", () => {
 
   const motor = getPart(db, motorId);
   assertExists(motor); // row still exists
-  assertEquals(motor!.quantity, 0);
+  assertEquals(motor!.quantity, 4); // still owns 4 — all 4 are in the build
+  assertEquals(freeQuantity(db, motorId), 0);
   db.close();
 });
 
-Deno.test("assembleBuild conservation: allocationForGroup shows on_hand 12 / allocated 4 / free 8", () => {
+Deno.test("assembleBuild conservation: allocationForPart shows on_hand 12 / allocated 4 / free 8", () => {
   const db = makeDb();
   const motorId = createPart(db, {
     name: "0702 Motor",
@@ -134,23 +151,24 @@ Deno.test("assembleBuild conservation: allocationForGroup shows on_hand 12 / all
   });
   const fcId = createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
 
-  assembleBuild(db, {
+  const buildId = assembleBuild(db, {
     name: "LionBee",
     selections: [
       { part_id: motorId, qty: 4 },
       { part_id: fcId, qty: 1 },
     ],
   });
+  void buildId;
 
-  const alloc = allocationForGroup(db, "0702 Motor", "motor");
-  // on_hand = 8 (stock) + 4 (installed) = 12 ✓ quantity is conserved
+  const alloc = allocationForPart(db, motorId);
+  // on_hand = 12 (total owned, conserved) ✓
   assertEquals(alloc.on_hand, 12);
   assertEquals(alloc.allocated, 4);
   assertEquals(alloc.free, 8);
   db.close();
 });
 
-Deno.test("assembleBuild records correct history entries", () => {
+Deno.test("assembleBuild records a 'created' build history entry", () => {
   const db = makeDb();
   const motorId = createPart(db, {
     name: "0702 Motor",
@@ -159,43 +177,45 @@ Deno.test("assembleBuild records correct history entries", () => {
     type: "motor",
   });
 
-  const craftId = assembleBuild(db, {
+  const buildId = assembleBuild(db, {
     name: "Quad",
     selections: [{ part_id: motorId, qty: 4 }],
   });
 
-  // Stock row history: 'created' + 'updated' (quantity_delta = -4)
-  const motorHistory = getPartHistory(db, motorId);
-  const updateEvent = motorHistory.find((h) => h.action === "updated");
-  assertExists(updateEvent);
-  assertEquals(updateEvent!.quantity_delta, -4);
+  // Build history: 'created' with the default status
+  const buildHistory = getBuildHistory(db, buildId);
+  assertEquals(buildHistory.length, 1);
+  assertEquals(buildHistory[0].action, "created");
+  assertEquals(buildHistory[0].new_status, "in-use");
 
-  // Child row history: 'created' with to_parent_id = craftId
-  const children = listParts(db, { parent_id: craftId });
-  const childHistory = getPartHistory(db, children[0].id);
-  const createdEvent = childHistory.find((h) => h.action === "created");
-  assertExists(createdEvent);
-  assertEquals(createdEvent!.to_parent_id, craftId);
+  // Quantity is conserved, so the part has no quantity-change history — but
+  // the allocation itself is recorded as an 'installed' entry pointing at the
+  // build, after the initial 'created'.
+  const motorHistory = getPartHistory(db, motorId);
+  assertEquals(motorHistory.length, 2);
+  assertEquals(motorHistory[0].action, "created");
+  assertEquals(motorHistory[1].action, "installed");
+  assertEquals(motorHistory[1].to_build_id, buildId);
   db.close();
 });
 
 // ─── assembleBuild — validation failures ─────────────────────────────────────
 
-Deno.test("assembleBuild rejects when qty exceeds available stock", () => {
+Deno.test("assembleBuild rejects when qty exceeds free stock", () => {
   const db = makeDb();
   const motorId = createPart(db, { name: "Motor", quantity: 12, status: "unused", type: "motor" });
 
   assertThrows(
     () => assembleBuild(db, { name: "Quad", selections: [{ part_id: motorId, qty: 13 }] }),
     Error,
-    "Not enough quantity",
+    "Not enough free stock",
   );
 
   // Nothing was changed — stock is still 12
   const motor = getPart(db, motorId);
   assertEquals(motor!.quantity, 12);
-  // No craft was created
-  assertEquals(listParts(db, { type: "craft" }).length, 0);
+  // No build was created
+  assertEquals(listBuilds(db).length, 0);
   db.close();
 });
 
@@ -209,39 +229,29 @@ Deno.test("assembleBuild rejects qty < 1", () => {
   db.close();
 });
 
-Deno.test("assembleBuild rejects craft-type parts as selections", () => {
+Deno.test("assembleBuild rejects a build id used as a selection part_id (builds are not parts)", () => {
   const db = makeDb();
-  const existingCraftId = createPart(db, {
-    name: "Old Quad",
-    quantity: 1,
-    status: "retired",
-    type: "craft",
-  });
+  const existingBuildId = createBuild(db, { name: "Old Quad", status: "retired" });
   assertThrows(
     () =>
-      assembleBuild(db, { name: "New Quad", selections: [{ part_id: existingCraftId, qty: 1 }] }),
+      assembleBuild(db, {
+        name: "New Quad",
+        selections: [{ part_id: existingBuildId, qty: 1 }],
+      }),
     Error,
   );
   db.close();
 });
 
-Deno.test("assembleBuild rejects non-top-level parts (child of another)", () => {
+Deno.test("assembleBuild rejects parts with no free stock (already fully allocated)", () => {
   const db = makeDb();
-  const craftId = createPart(db, {
-    name: "Old Quad",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
-  const installedId = createPart(db, {
-    name: "Motor",
-    quantity: 4,
-    status: "in-use",
-    type: "motor",
-    parent_id: craftId,
-  });
+  const buildId = createBuild(db, { name: "Old Quad", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "in-use", type: "motor" });
+  // All 4 motors are already installed in another build — free stock is 0
+  addBuildComponent(db, buildId, motorId, 4);
+
   assertThrows(
-    () => assembleBuild(db, { name: "New Quad", selections: [{ part_id: installedId, qty: 1 }] }),
+    () => assembleBuild(db, { name: "New Quad", selections: [{ part_id: motorId, qty: 1 }] }),
     Error,
   );
   db.close();
@@ -279,7 +289,7 @@ Deno.test("assembleBuild rolls back everything on validation failure mid-transac
   // Both stock rows unchanged — nothing committed
   assertEquals(getPart(db, goodId)!.quantity, 8);
   assertEquals(getPart(db, badId)!.quantity, 1);
-  assertEquals(listParts(db, { type: "craft" }).length, 0);
+  assertEquals(listBuilds(db).length, 0);
   db.close();
 });
 
@@ -298,12 +308,12 @@ Deno.test("assembleBuild rejects duplicate part_id entries that would overdraw s
         ],
       }),
     Error,
-    "Not enough quantity",
+    "Not enough free stock",
   );
 
   // Stock unchanged — nothing was committed
   assertEquals(getPart(db, motorId)!.quantity, 4);
-  assertEquals(listParts(db, { type: "craft" }).length, 0);
+  assertEquals(listBuilds(db).length, 0);
   db.close();
 });
 
@@ -319,12 +329,12 @@ Deno.test("GET /builds/new returns 200 HTML with a form", async () => {
   assertStringIncludes(body, "builds/from-bin");
 });
 
-Deno.test("GET /builds/new shows available top-level non-craft parts with qty > 0", async () => {
+Deno.test("GET /builds/new shows parts with qty > 0, but no builds and no zero-stock parts", async () => {
   const { db, handler } = makeApp();
   createPart(db, { name: "0702 Motor", quantity: 12, status: "unused", type: "motor" });
   createPart(db, { name: "FC-F4", quantity: 2, status: "unused", type: "fc" });
-  // craft should not appear in picker
-  createPart(db, { name: "Old Quad", quantity: 1, status: "retired", type: "craft" });
+  // builds are not parts — should not appear in the picker
+  createBuild(db, { name: "Old Quad", status: "retired" });
   // zero quantity should not appear
   createPart(db, { name: "Sold Out Part", quantity: 0, status: "unused", type: "esc" });
 
@@ -333,13 +343,15 @@ Deno.test("GET /builds/new shows available top-level non-craft parts with qty > 
 
   assertStringIncludes(body, "0702 Motor");
   assertStringIncludes(body, "FC-F4");
-  // craft should not be in picker
+  // builds are not parts — a build must not be in the picker
   assertEquals(body.includes("Old Quad"), false);
+  // zero-stock parts must not be in the picker
+  assertEquals(body.includes("Sold Out Part"), false);
 });
 
 // ─── POST /builds/from-bin ────────────────────────────────────────────────────
 
-Deno.test("POST /builds/from-bin creates build and redirects to new craft detail", async () => {
+Deno.test("POST /builds/from-bin creates build and redirects to the new build detail", async () => {
   const { db, handler } = makeApp();
   const motorId = createPart(db, {
     name: "0702 Motor",
@@ -360,12 +372,14 @@ Deno.test("POST /builds/from-bin creates build and redirects to new craft detail
   assertEquals(res.status, 303);
   const location = res.headers.get("Location");
   assertExists(location);
-  assertStringIncludes(location, "/parts/");
+  assertStringIncludes(location, "/builds/");
 
   // Verify build was created
-  const crafts = listParts(db, { type: "craft" });
-  assertEquals(crafts.length, 1);
-  assertEquals(crafts[0].name, "My Build");
+  const builds = listBuilds(db);
+  assertEquals(builds.length, 1);
+  assertEquals(builds[0].name, "My Build");
+  // And it got the selected components
+  assertEquals(listBuildComponents(db, builds[0].id).length, 2);
   db.close();
 });
 
@@ -406,4 +420,88 @@ Deno.test("POST /builds/from-bin over-request returns 400 and re-renders form", 
   assertEquals(res.status, 400);
   const body = await res.text();
   assertStringIncludes(body.toLowerCase(), "not enough");
+});
+
+Deno.test("POST /builds/:id/components/add is atomic — one bad selection leaves the BOM unchanged", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  const fcId = createPart(db, { name: "FC", quantity: 1, status: "unused", type: "fc" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "2"); // valid
+  form.set(`qty_${fcId}`, "5"); // over free stock
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 500);
+  // nothing was installed — the earlier valid selection rolled back too
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+  assertEquals(freeQuantity(db, motorId), 4);
+});
+
+Deno.test("POST /builds/:id/components/add rejects non-integer quantities instead of truncating", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "2.5");
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 400);
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+});
+
+Deno.test("POST /builds/:id/components/add parses '1e1' as ten and skips zeroed picker rows", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 12, status: "unused", type: "motor" });
+  const fcId = createPart(db, { name: "FC", quantity: 1, status: "unused", type: "fc" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "1e1");
+  form.set(`qty_${fcId}`, "0"); // unselected picker row
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 303);
+  const components = listBuildComponents(db, buildId);
+  assertEquals(components.length, 1);
+  assertEquals(components[0].quantity, 10);
+});
+
+Deno.test("POST /builds/:id/components/add records an 'installed' history entry with to_build_id", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "2");
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 303);
+
+  const history = getPartHistory(db, motorId);
+  const installed = history.filter((h) => h.action === "installed");
+  assertEquals(installed.length, 1);
+  assertEquals(installed[0].to_build_id, buildId);
 });

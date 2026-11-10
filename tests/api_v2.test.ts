@@ -5,7 +5,7 @@
  *   INV-7: GET /api/stock
  */
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createPart, initDb } from "../db.ts";
+import { addBuildComponent, createBuild, createPart, initDb } from "../db.ts";
 import { makeHandler } from "../main.ts";
 
 function makeApp() {
@@ -15,15 +15,10 @@ function makeApp() {
 
 // ─── GET /api/builds/:id/bom (INV-5) ──────────────────────────────────────────
 
-Deno.test("GET /api/builds/:id/bom returns [] for a build with no children", async () => {
+Deno.test("GET /api/builds/:id/bom returns [] for a build with no components", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "Empty Quad",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
-  const res = await handler(new Request(`http://localhost/api/builds/${craftId}/bom`));
+  const buildId = createBuild(db, { name: "Empty Quad", status: "in-use" });
+  const res = await handler(new Request(`http://localhost/api/builds/${buildId}/bom`));
   assertEquals(res.status, 200);
   assertEquals(res.headers.get("Content-Type"), "application/json; charset=utf-8");
   assertEquals(await res.json(), []);
@@ -31,29 +26,22 @@ Deno.test("GET /api/builds/:id/bom returns [] for a build with no children", asy
 
 Deno.test("GET /api/builds/:id/bom returns BOM rows with allocation fields", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
-  // 8 in stock
-  createPart(db, { name: "0702 Motor", quantity: 8, status: "unused", type: "motor" });
-  // 4 installed
-  const childId = createPart(db, {
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  // 12 owned, 4 of them installed in the build
+  const motorId = createPart(db, {
     name: "0702 Motor",
-    quantity: 4,
-    status: "in-use",
+    quantity: 12,
+    status: "unused",
     type: "motor",
-    parent_id: craftId,
   });
+  addBuildComponent(db, buildId, motorId, 4);
 
-  const res = await handler(new Request(`http://localhost/api/builds/${craftId}/bom`));
+  const res = await handler(new Request(`http://localhost/api/builds/${buildId}/bom`));
   assertEquals(res.status, 200);
   const body = await res.json();
   assertEquals(body.length, 1);
   const row = body[0];
-  assertEquals(row.part_id, childId);
+  assertEquals(row.part_id, motorId);
   assertEquals(row.part_name, "0702 Motor");
   assertEquals(row.part_type, "motor");
   assertEquals(row.qty_in_build, 4);
@@ -87,25 +75,14 @@ Deno.test("GET /api/builds/:id/bom returns 404 for unknown id", async () => {
 
 Deno.test("GET /api/parts/:id/allocation returns allocation for a part", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "LionBee",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
   const stockId = createPart(db, {
     name: "0702 Motor",
-    quantity: 8,
+    quantity: 12,
     status: "unused",
     type: "motor",
   });
-  createPart(db, {
-    name: "0702 Motor",
-    quantity: 4,
-    status: "in-use",
-    type: "motor",
-    parent_id: craftId,
-  });
+  addBuildComponent(db, buildId, stockId, 4);
 
   const res = await handler(new Request(`http://localhost/api/parts/${stockId}/allocation`));
   assertEquals(res.status, 200);
@@ -117,9 +94,58 @@ Deno.test("GET /api/parts/:id/allocation returns allocation for a part", async (
   assertEquals(body.free, 8);
   assertEquals(Array.isArray(body.builds), true);
   assertEquals(body.builds.length, 1);
-  assertEquals(body.builds[0].build_id, craftId);
+  assertEquals(body.builds[0].build_id, buildId);
   assertEquals(body.builds[0].build_name, "LionBee");
   assertEquals(body.builds[0].qty, 4);
+});
+
+Deno.test("allocation survives renaming the part (the join is on id, not name)", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  const stockId = createPart(db, {
+    name: "0702 Motor",
+    quantity: 12,
+    status: "unused",
+    type: "motor",
+  });
+  addBuildComponent(db, buildId, stockId, 4);
+  db.query("UPDATE parts SET name = ? WHERE id = ?", ["0702 Motor x4", stockId]);
+
+  const res = await handler(new Request(`http://localhost/api/parts/${stockId}/allocation`));
+  const body = await res.json();
+  assertEquals(body.on_hand, 12);
+  assertEquals(body.allocated, 4);
+  assertEquals(body.free, 8);
+  assertEquals(body.builds.length, 1);
+});
+
+Deno.test("two parts sharing a name are not merged into one allocation", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  const motorA = createPart(db, {
+    name: "0702 Motor",
+    quantity: 12,
+    status: "unused",
+    type: "motor",
+  });
+  const motorB = createPart(db, {
+    name: "0702 Motor",
+    quantity: 4,
+    status: "unused",
+    type: "motor",
+  });
+  addBuildComponent(db, buildId, motorA, 4);
+
+  const resA = await handler(new Request(`http://localhost/api/parts/${motorA}/allocation`));
+  const bodyA = await resA.json();
+  assertEquals(bodyA.on_hand, 12);
+  assertEquals(bodyA.allocated, 4);
+
+  const resB = await handler(new Request(`http://localhost/api/parts/${motorB}/allocation`));
+  const bodyB = await resB.json();
+  assertEquals(bodyB.on_hand, 4);
+  assertEquals(bodyB.allocated, 0);
+  assertEquals(bodyB.free, 4);
 });
 
 Deno.test("GET /api/parts/:id/allocation returns 404 for unknown part", async () => {
@@ -273,18 +299,18 @@ Deno.test("GET /api/stock returns aggregated type×status rows", async () => {
   assertEquals(frameUnused!.count, 1);
 });
 
-Deno.test("GET /api/stock includes craft and gear rows", async () => {
+Deno.test("GET /api/stock includes gear rows; builds are not stock rows", async () => {
   const { db, handler } = makeApp();
-  createPart(db, { name: "My Quad", quantity: 1, status: "in-use", type: "craft" });
+  createBuild(db, { name: "My Quad", status: "in-use" });
   createPart(db, { name: "Goggles", quantity: 1, status: "unused", type: "gear" });
 
   const res = await handler(new Request("http://localhost/api/stock"));
   const body: Array<{ type: string; status: string }> = await res.json();
 
-  const craftRow = body.find((r) => r.type === "craft");
-  assertExists(craftRow);
   const gearRow = body.find((r) => r.type === "gear");
   assertExists(gearRow);
+  // Builds are not parts — there is no craft type and no row for the build
+  assertEquals(body.find((r) => r.type === "craft"), undefined);
 });
 
 Deno.test("GET /api/stock rows with null type return type: null", async () => {

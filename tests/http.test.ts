@@ -1,5 +1,15 @@
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createPart, initDb } from "../db.ts";
+import {
+  addBuildComponent,
+  createBuild,
+  createPart,
+  getBuild,
+  getBuildHistory,
+  getPartHistory,
+  initDb,
+  listBuildComponents,
+  listParts,
+} from "../db.ts";
 import { makeHandler } from "../main.ts";
 
 function makeApp() {
@@ -103,24 +113,21 @@ Deno.test("POST /parts with invalid parent_id treats part as top-level", async (
   const { handler } = makeApp();
   const form = new FormData();
   form.append("name", "Quad Beta");
-  form.append("parent_id", "not-a-number");
   const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
   assertEquals(res.status, 303);
   assertEquals(res.headers.get("Location"), "/");
 });
 
-Deno.test("POST /parts supports optional parent_id", async () => {
+Deno.test("POST /parts creates a part and redirects to the inventory", async () => {
   const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
   const form = new FormData();
   form.append("name", "Motor");
   form.append("quantity", "4");
   form.append("status", "in-use");
-  form.append("parent_id", String(quadId));
   const res = await handler(new Request("http://localhost/parts", { method: "POST", body: form }));
   assertEquals(res.status, 303);
-  // Redirect to the parent's detail page
-  assertEquals(res.headers.get("Location"), `/parts/${quadId}`);
+  assertEquals(res.headers.get("Location"), "/");
+  assertEquals(listParts(db).length, 1);
 });
 
 // ─── Part detail ──────────────────────────────────────────────────────────────
@@ -135,54 +142,25 @@ Deno.test("GET /parts/:id returns part detail HTML", async () => {
   assertStringIncludes(html, "3.5 inch");
 });
 
-Deno.test("GET /parts/:id shows child parts", async () => {
+Deno.test("GET /parts/:id shows the builds a part is installed in", async () => {
   const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Camera", quantity: 1, status: "in-use", parent_id: quadId });
-  const res = await handler(new Request(`http://localhost/parts/${quadId}`));
-  const html = await res.text();
-  assertStringIncludes(html, "Camera");
-});
-
-Deno.test("GET /parts/:id shows parent assembly name when part belongs to one", async () => {
-  const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad Alpha", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, {
-    name: "Motor",
-    quantity: 4,
-    status: "in-use",
-    parent_id: quadId,
-  });
+  const buildId = createBuild(db, { name: "Quad Alpha", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused" });
+  addBuildComponent(db, buildId, motorId, 2);
   const res = await handler(new Request(`http://localhost/parts/${motorId}`));
   assertEquals(res.status, 200);
   const html = await res.text();
-  // Detail page should show which assembly the part belongs to
   assertStringIncludes(html, "Quad Alpha");
-  assertStringIncludes(html, "Assembly");
+  assertStringIncludes(html, "Allocation");
 });
 
-Deno.test("GET /parts/:id does not show assembly section for top-level parts", async () => {
+Deno.test("GET /parts/:id shows no build section for an uninstalled part", async () => {
   const { db, handler } = makeApp();
   const id = createPart(db, { name: "Loose Motor", quantity: 4, status: "unused" });
   const res = await handler(new Request(`http://localhost/parts/${id}`));
   const html = await res.text();
-  // Should not show "Part of assembly" label for top-level parts
-  // (breadcrumb shows just Home, no assembly link)
   assertStringIncludes(html, "Loose Motor");
-});
-
-Deno.test("GET /parts/:id shows child parts with assembly indicator in their row", async () => {
-  const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad Beta", quantity: 1, status: "in-use" });
-  createPart(db, { name: "ESC", quantity: 1, status: "in-use", parent_id: quadId });
-  // When viewing the ESC directly, it shows the parent assembly name
-  const escId = await (async () => {
-    const res2 = await handler(new Request(`http://localhost/parts/${quadId}`));
-    const html2 = await res2.text();
-    assertStringIncludes(html2, "ESC");
-    return null;
-  })();
-  void escId;
+  assertStringIncludes(html, "Not installed in any build.");
 });
 
 Deno.test("GET /parts/:id shows part history", async () => {
@@ -246,23 +224,20 @@ Deno.test("POST /parts/:id/update changes status and redirects", async () => {
 
 // ─── Move part (POST /parts/:id/move) ────────────────────────────────────────
 
-Deno.test("POST /parts/:id/move reassigns parent and redirects", async () => {
+Deno.test("POST /parts/:id/install installs the part in a build and redirects", async () => {
   const { db, handler } = makeApp();
-  const quad1Id = createPart(db, { name: "Quad 1", quantity: 1, status: "in-use" });
-  const quad2Id = createPart(db, { name: "Quad 2", quantity: 1, status: "in-use" });
-  const motorId = createPart(db, {
-    name: "Motor",
-    quantity: 4,
-    status: "in-use",
-    parent_id: quad1Id,
-  });
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused" });
   const form = new FormData();
-  form.append("new_parent_id", String(quad2Id));
+  form.append("build_id", String(buildId));
+  form.append("quantity", "2");
   form.append("notes", "Salvaged");
   const res = await handler(
-    new Request(`http://localhost/parts/${motorId}/move`, { method: "POST", body: form }),
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
   );
   assertEquals(res.status, 303);
+  assertEquals(res.headers.get("Location"), `/builds/${buildId}`);
+  assertEquals(listBuildComponents(db, buildId).length, 1);
 });
 
 // ─── Photo upload (POST /parts/:id/photo) ────────────────────────────────────
@@ -292,4 +267,129 @@ Deno.test("GET /unknown returns 404", async () => {
   const { handler } = makeApp();
   const res = await handler(new Request("http://localhost/unknown"));
   assertEquals(res.status, 404);
+});
+
+// ─── Build edit, update and photo actions (#85 review) ───────────────────────
+
+Deno.test("GET /builds/:id links to the edit and photo views", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}`));
+  const html = await res.text();
+
+  assertStringIncludes(html, `/builds/${buildId}/edit`);
+  assertStringIncludes(html, `/builds/${buildId}/photo`);
+});
+
+Deno.test("GET /builds/:id/edit renders a form that posts to /builds/:id/update", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, {
+    name: "LionBee",
+    status: "in-use",
+    class: "whoop",
+    notes: "mushy",
+  });
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}/edit`));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+
+  assertStringIncludes(html, `action="/builds/${buildId}/update"`);
+  assertStringIncludes(html, 'name="status"');
+  assertStringIncludes(html, 'name="class"');
+  assertStringIncludes(html, 'name="notes"');
+  assertStringIncludes(html, 'name="specs"');
+  assertStringIncludes(html, "whoop");
+});
+
+Deno.test("POST /builds/:id/update changes status and records build history", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set("status", "broken");
+  form.set("class", "whoop");
+  form.set("notes", "frame arm cracked");
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/update`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+
+  const build = getBuild(db, buildId);
+  assertEquals(build!.status, "broken");
+  assertEquals(build!.class, "whoop");
+  assertEquals(build!.notes, "frame arm cracked");
+
+  const history = getBuildHistory(db, buildId);
+  const last = history[history.length - 1];
+  assertEquals(last.action, "updated");
+  assertEquals(last.old_status, "in-use");
+  assertEquals(last.new_status, "broken");
+});
+
+Deno.test("POST /builds/:id/update 404s for a non-build id", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Motor", quantity: 1, status: "unused" });
+  const form = new FormData();
+  form.set("status", "broken");
+  const res = await handler(
+    new Request("http://localhost/builds/1/update", { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 404);
+});
+
+Deno.test("GET /builds/:id/photo renders the upload form", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}/photo`));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  assertStringIncludes(html, `action="/builds/${buildId}/photo"`);
+  assertStringIncludes(html, 'type="file"');
+});
+
+Deno.test("POST /parts/:id/install parses '1e1' as ten, not one", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 12, status: "unused" });
+  const form = new FormData();
+  form.append("build_id", String(buildId));
+  form.append("quantity", "1e1");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+  assertEquals(listBuildComponents(db, buildId)[0].quantity, 10);
+});
+
+Deno.test("POST /parts/:id/install rejects a non-integer quantity", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused" });
+  const form = new FormData();
+  form.append("build_id", String(buildId));
+  form.append("quantity", "2.5");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 400);
+  assertEquals(listBuildComponents(db, buildId).length, 0);
+});
+
+Deno.test("POST /parts/:id/install records exactly one 'installed' history entry", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused" });
+  const form = new FormData();
+  form.append("build_id", String(buildId));
+  form.append("quantity", "2");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+  const history = getPartHistory(db, motorId);
+  assertEquals(history.filter((h) => h.action === "installed").length, 1);
 });

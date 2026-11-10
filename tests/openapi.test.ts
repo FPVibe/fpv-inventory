@@ -79,3 +79,22 @@ Deno.test("every path in the spec has a get operation", () => {
     );
   }
 });
+
+Deno.test("the /api/parts spec does not advertise the removed parent_id filter", () => {
+  const params = (
+    openapiSpec.paths["/api/parts"].get.parameters as { name: string }[]
+  ).map((p) => p.name);
+  assertEquals(params.includes("parent_id"), false);
+});
+
+Deno.test("the HistoryEntry schema describes the v2 history payload", () => {
+  const schemas = openapiSpec.components.schemas as Record<string, unknown>;
+  const entry = schemas.HistoryEntry as { properties: Record<string, { enum?: string[] }> };
+  assertEquals("from_build_id" in entry.properties, true);
+  assertEquals("to_build_id" in entry.properties, true);
+  assertEquals("from_parent_id" in entry.properties, false);
+  assertEquals("to_parent_id" in entry.properties, false);
+  for (const action of ["created", "updated", "moved", "installed", "removed"]) {
+    assertEquals(entry.properties.action.enum!.includes(action), true);
+  }
+});

@@ -1,20 +1,28 @@
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import {
+  addBuildComponent,
   assembleBuild,
+  createBuild,
   createPart,
+  freeQuantity,
+  getBuild,
+  getBuildHistory,
   getPart,
   getPartHistory,
   initDb,
+  listBuildComponents,
+  listBuilds,
   listParts,
-  movePart,
   type Part,
   type PartStatus,
   type PartType,
   queryInventorySummary,
   queryStockRows,
+  removeBuildComponent,
+  updateBuild,
   updatePart,
 } from "./db.ts";
-import { allocationForGroup } from "./allocation.ts";
+import { allocationForPart } from "./allocation.ts";
 import { handleApi } from "./api.ts";
 
 const PHOTOS_DIR = Deno.env.get("PHOTOS_DIR") ?? "./photos";
@@ -45,7 +53,6 @@ const TYPE_LABELS: Record<PartType, string> = {
   "camera": "Camera",
   "antenna": "Antenna",
   "battery": "Battery",
-  "craft": "Craft",
   "gear": "Gear",
   "other": "Other",
 };
@@ -86,7 +93,6 @@ const ALL_TYPES = [
   "camera",
   "antenna",
   "battery",
-  "craft",
   "gear",
   "other",
 ] as PartType[];
@@ -221,6 +227,7 @@ function layout(title: string, body: string): string {
           <h1><a href="/">🚁 FPV Inventory</a></h1>
           <nav style="display:flex;gap:12px;margin-left:auto;font-size:.875rem">
             <a href="/" style="color:#8b949e">Inventory</a>
+            <a href="/builds" style="color:#8b949e">Builds</a>
             <a href="/stock" style="color:#8b949e">Stock</a>
             <a href="/builds/new" style="color:#8b949e">New Build</a>
           </nav>
@@ -233,26 +240,15 @@ function layout(title: string, body: string): string {
   `;
 }
 
-function fullAddForm(parentId?: number): string {
-  const parentInput = parentId != null
-    ? `<input type="hidden" name="parent_id" value="${parentId}">`
-    : `
-      <div class="field">
-        <label>Parent Assembly (optional)</label>
-        <select name="parent_id">
-          <option value="">(none — spare parts)</option>
-        </select>
-      </div>`;
-  const title = parentId != null ? `Add Component to Assembly` : `Add Part`;
-  const backLink = parentId != null ? `/parts/${parentId}` : "/";
+function fullAddForm(): string {
+  const title = `Add Part`;
   return layout(
     title,
     `
-    <div class="breadcrumb"><a href="${backLink}">← Back</a></div>
+    <div class="breadcrumb"><a href="/">← Back</a></div>
     <div class="card">
       <h2>${escape(title)}</h2>
       <form method="POST" action="/parts/new">
-        ${parentInput}
         <div class="field">
           <label>Name *</label>
           <input name="name" required placeholder="e.g. 0702 Motor, Quad Alpha…" autofocus>
@@ -310,7 +306,7 @@ function fullAddForm(parentId?: number): string {
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button type="submit" class="btn btn-primary">Save Part</button>
-          <a href="${backLink}" class="btn">Cancel</a>
+          <a href="/" class="btn">Cancel</a>
         </div>
       </form>
     </div>
@@ -318,15 +314,11 @@ function fullAddForm(parentId?: number): string {
   );
 }
 
-function quickAddForm(parentId?: number): string {
-  const parentInput = parentId != null
-    ? `<input type="hidden" name="parent_id" value="${parentId}">`
-    : "";
+function quickAddForm(): string {
   return `
 <div class="card">
   <h2>Quick Add</h2>
   <form method="POST" action="/parts">
-    ${parentInput}
     <div class="quick-add">
       <div class="field" style="flex:2;min-width:180px">
         <label>Name *</label>
@@ -359,9 +351,7 @@ function quickAddForm(parentId?: number): string {
       </div>
       <div class="field" style="flex:none">
         <label>&nbsp;</label>
-        <a href="/parts/new${
-    parentId != null ? `?parent_id=${parentId}` : ""
-  }" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
+        <a href="/parts/new" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
       </div>
     </div>
   </form>
@@ -386,8 +376,8 @@ function partRow(part: Part): string {
 }
 
 function stockPage(db: DB): string {
-  // Reuse the shared aggregation function (INV-7); exclude craft rows here.
-  const rows = queryStockRows(db).filter((r) => r.type !== "craft");
+  // Reuse the shared aggregation function (INV-7).
+  const rows = queryStockRows(db);
 
   if (rows.length === 0) {
     return layout(
@@ -470,7 +460,7 @@ function summaryCard(db: DB): string {
 }
 
 function homePage(db: DB, typeFilter?: PartType, query?: string): string {
-  const parts = listParts(db, { parent_id: null, type: typeFilter, q: query });
+  const parts = listParts(db, { type: typeFilter, q: query });
   const searching = query != null && query.length > 0;
   const rows = parts.length > 0
     ? parts.map(partRow).join("")
@@ -496,7 +486,7 @@ function homePage(db: DB, typeFilter?: PartType, query?: string): string {
     ${summaryCard(db)}
     ${quickAddForm()}
     <div class="card">
-      <h2>Parts &amp; Assemblies</h2>
+      <h2>Parts</h2>
       ${filterBar}
       ${rows}
     </div>
@@ -505,34 +495,42 @@ function homePage(db: DB, typeFilter?: PartType, query?: string): string {
 }
 
 async function buildBreadcrumb(db: DB, partId: number): Promise<string> {
-  const crumbs: { id: number; name: string }[] = [];
-  let current = getPart(db, partId);
-  while (current) {
-    crumbs.unshift({ id: current.id, name: current.name });
-    current = current.parent_id != null ? getPart(db, current.parent_id) : null;
-  }
-  const links = crumbs.map((c, i) =>
-    i === crumbs.length - 1 ? escape(c.name) : `<a href="/parts/${c.id}">${escape(c.name)}</a>`
-  );
-  return `<div class="breadcrumb"><a href="/">Home</a> › ${links.join(" › ")}</div>`;
+  const part = getPart(db, partId);
+  if (!part) return `<div class="breadcrumb"><a href="/">Home</a></div>`;
+  return `<div class="breadcrumb"><a href="/">Home</a> › ${escape(part.name)}</div>`;
 }
 
 function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string {
   switch (entry.action) {
     case "created":
-      return entry.to_parent_id ? `Added to assembly #${entry.to_parent_id}` : "Added to inventory";
+      // Migrated v1 entries may carry the original install destination —
+      // assembleBuild recorded an installed child's first event this way.
+      return entry.to_build_id != null
+        ? `Added to inventory and installed in build #${entry.to_build_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`
+        : "Added to inventory";
     case "updated":
       return entry.old_status !== entry.new_status
         ? `Status changed: ${entry.old_status} → ${entry.new_status}`
         : entry.quantity_delta && entry.quantity_delta !== 0
         ? `Quantity changed by ${entry.quantity_delta > 0 ? "+" : ""}${entry.quantity_delta}`
         : "Details updated";
+    case "installed":
+      return `Installed in build #${entry.to_build_id}${
+        entry.notes ? ` — ${escape(entry.notes)}` : ""
+      }`;
+    case "removed":
+      return `Removed from build #${entry.from_build_id}${
+        entry.notes ? ` — ${escape(entry.notes)}` : ""
+      }`;
     case "moved":
-      return entry.to_parent_id
-        ? `Moved from #${entry.from_parent_id ?? "spare parts"} to assembly #${entry.to_parent_id}${
-          entry.notes ? ` — ${escape(entry.notes)}` : ""
-        }`
-        : `Removed from assembly #${entry.from_parent_id}${
+      // Legacy (pre-builds-model) entries: v1 moved stock between assemblies.
+      return entry.to_build_id != null
+        ? `Moved from ${
+          entry.from_build_id != null ? `build #${entry.from_build_id}` : "spare parts"
+        } to build #${entry.to_build_id}${entry.notes ? ` — ${escape(entry.notes)}` : ""}`
+        : `Removed from build #${entry.from_build_id}${
           entry.notes ? ` — ${escape(entry.notes)}` : ""
         }`;
     default:
@@ -544,30 +542,25 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
   const part = getPart(db, id);
   if (!part) return null;
 
-  const children = listParts(db, { parent_id: id });
   const history = getPartHistory(db, id);
-  const allParts = listParts(db).filter((p) => p.id !== id);
   const breadcrumb = await buildBreadcrumb(db, id);
+  const alloc = allocationForPart(db, id);
 
   const photoSection = part.photo_path
     ? `<img src="/photos/${escape(part.photo_path)}" alt="photo" class="photo-preview">`
     : "";
 
-  // Allocation surfacing (INV-11)
-  // For non-craft top-level parts: show on_hand / allocated / free + build list
-  // For craft parts: show a BOM table with allocation columns
-  let allocationCard = "";
-  if (part.type !== "craft" && part.parent_id === null) {
-    const alloc = allocationForGroup(db, part.name, part.type);
-    const buildsHtml = alloc.builds.length > 0
-      ? alloc.builds.map((b) =>
-        `<div class="part-row">
-          <span class="part-name"><a href="/parts/${b.build_id}">${escape(b.build_name)}</a></span>
-          <span class="part-meta">${b.qty} installed</span>
-         </div>`
-      ).join("")
-      : `<p class="empty">Not installed in any build.</p>`;
-    allocationCard = `
+  // Which builds this part is installed in.
+  const buildsHtml = alloc.builds.length > 0
+    ? alloc.builds.map((b) =>
+      `<div class="part-row">
+        <span class="part-name"><a href="/builds/${b.build_id}">${escape(b.build_name)}</a></span>
+        <span class="part-meta">${b.qty} installed</span>
+       </div>`
+    )
+    : `<p class="empty">Not installed in any build.</p>`;
+
+  const allocationCard = `
       <div class="card">
         <h2>Allocation</h2>
         <div style="display:flex;gap:24px;margin-bottom:12px;font-size:.9rem">
@@ -577,45 +570,6 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         </div>
         ${buildsHtml}
       </div>`;
-  } else if (part.type === "craft" && part.parent_id === null && children.length > 0) {
-    // BOM table with allocation columns for builds
-    const bomRows = children.map((child) => {
-      const alloc = allocationForGroup(db, child.name, child.type);
-      return `
-        <tr>
-          <td style="padding:8px 0"><a href="/parts/${child.id}">${escape(child.name)}</a>
-            ${child.type ? typeBadge(child.type) : ""}</td>
-          <td style="padding:8px 0;text-align:right">${child.quantity}</td>
-          <td style="padding:8px 0;text-align:right">${alloc.on_hand}</td>
-          <td style="padding:8px 0;text-align:right">${alloc.allocated}</td>
-          <td style="padding:8px 0;text-align:right">${alloc.free}</td>
-        </tr>`;
-    }).join("");
-    allocationCard = `
-      <div class="card">
-        <h2>Bill of Materials</h2>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:.875rem">
-            <thead>
-              <tr style="color:#8b949e;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">
-                <th style="text-align:left;padding:4px 0">Component</th>
-                <th style="text-align:right;padding:4px 0">In Build</th>
-                <th style="text-align:right;padding:4px 0">On Hand</th>
-                <th style="text-align:right;padding:4px 0">Allocated</th>
-                <th style="text-align:right;padding:4px 0">Free</th>
-              </tr>
-            </thead>
-            <tbody style="border-top:1px solid #30363d">
-              ${bomRows}
-            </tbody>
-          </table>
-        </div>
-      </div>`;
-  }
-
-  const childrenHtml = children.length > 0
-    ? children.map(partRow).join("")
-    : `<p class="empty">No components — use quick add below.</p>`;
 
   const historyHtml = history.map((h) => `
     <div class="history-item">
@@ -626,12 +580,6 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
   }</span>
     </div>
   `).join("");
-
-  const parentOptions = allParts
-    .map((p) => `<option value="${p.id}">${escape(p.name)}</option>`)
-    .join("");
-
-  const currentParentId = part.parent_id;
 
   return layout(
     part.name,
@@ -657,6 +605,7 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         <div class="detail-field">
           <span class="label">Quantity</span>
           ${escape(part.quantity)}
+          <span style="color:#8b949e">total owned</span>
         </div>
         ${
       part.notes
@@ -668,13 +617,6 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
         ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${
           escape(part.specs)
         }</pre></div>`
-        : ""
-    }
-        ${
-      part.parent_id != null
-        ? `<div class="detail-field"><span class="label">Assembly</span><a href="/parts/${part.parent_id}">${
-          escape(getPart(db, part.parent_id)?.name ?? `#${part.parent_id}`)
-        }</a></div>`
         : ""
     }
         ${
@@ -714,7 +656,7 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
 
         <div class="actions">
           <a href="/parts/${id}/edit" class="btn btn-primary btn-sm">Edit</a>
-          <a href="/parts/${id}/move" class="btn btn-sm">Move</a>
+          <a href="/parts/${id}/install" class="btn btn-sm">Install in a build</a>
           <a href="/parts/${id}/photo" class="btn btn-sm">Change photo</a>
         </div>
       </div>
@@ -728,13 +670,213 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
     </div>
 
     ${allocationCard}
+  `,
+  );
+}
 
+// ─── Builds ──────────────────────────────────────────────────────────────────
+
+function buildsPage(db: DB): string {
+  const builds = listBuilds(db);
+  const rows = builds.length > 0
+    ? builds.map((b) => {
+      const components = listBuildComponents(db, b.id);
+      const qty = components.reduce((sum, c) => sum + c.quantity, 0);
+      return `
+<div class="part-row">
+  <span class="part-name"><a href="/builds/${b.id}">${escape(b.name)}</a>
+    ${b.class ? `<span class="type-badge">${escape(b.class)}</span>` : ""}
+  </span>
+  <span class="part-meta">${components.length} components · ${qty} parts</span>
+  ${statusBadge(b.status)}
+</div>`;
+    }).join("")
+    : `<p class="empty">No builds yet — create one from the bin.</p>`;
+
+  return layout(
+    "Builds",
+    `
     <div class="card">
-      <h2>Components of ${escape(part.name)}</h2>
-      ${childrenHtml}
+      <h2>Builds</h2>
+      ${rows}
+    </div>
+    <div class="card">
+      <a href="/builds/new" class="btn btn-primary">New Build from Bin</a>
+    </div>
+  `,
+  );
+}
+
+async function buildDetailPage(db: DB, id: number): Promise<string | null> {
+  const build = getBuild(db, id);
+  if (!build) return null;
+
+  const components = listBuildComponents(db, id);
+  const history = getBuildHistory(db, id);
+
+  const bomRows = components.length > 0
+    ? components.map((c) => {
+      const alloc = allocationForPart(db, c.part_id);
+      return `
+        <tr>
+          <td style="padding:8px 0"><a href="/parts/${c.part_id}">${escape(c.name)}</a>
+            ${c.type ? typeBadge(c.type) : ""}
+            ${c.role ? `<span class="type-badge">${escape(c.role)}</span>` : ""}</td>
+          <td style="padding:8px 0;text-align:right">${c.quantity}</td>
+          <td style="padding:8px 0;text-align:right">${alloc.on_hand}</td>
+          <td style="padding:8px 0;text-align:right">${alloc.allocated}</td>
+          <td style="padding:8px 0;text-align:right">${alloc.free}</td>
+          <td style="padding:8px 0;text-align:right">
+            <form method="POST" action="/builds/${id}/components/remove">
+              <input type="hidden" name="component_id" value="${c.id}">
+              <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+            </form>
+          </td>
+        </tr>`;
+    }).join("")
+    : `<tr><td colspan="6" style="padding:12px;color:#8b949e">No components yet.</td></tr>`;
+
+  const historyHtml = history.map((h) => `
+    <div class="history-item">
+      <span class="history-action">${escape(h.action)}</span>
+      ${h.new_status ? `— status ${escape(h.new_status)}` : ""}
+      <span style="float:right;font-size:.75rem">${
+    h.created_at.replace("T", " ").slice(0, 16)
+  }</span>
+    </div>
+  `).join("");
+
+  return layout(
+    build.name,
+    `
+    <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> › ${
+      escape(build.name)
+    }</div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Build Details</h2>
+        ${
+      build.photo_path
+        ? `<img src="/photos/${escape(build.photo_path)}" alt="photo" class="photo-preview">`
+        : ""
+    }
+        <div class="detail-field">
+          <span class="label">Name</span>
+          <strong>${escape(build.name)}</strong>
+        </div>
+        <div class="detail-field">
+          <span class="label">Status</span>
+          ${statusBadge(build.status)}
+        </div>
+        ${
+      build.class
+        ? `<div class="detail-field"><span class="label">Class</span>${escape(build.class)}</div>`
+        : ""
+    }
+        ${
+      build.notes
+        ? `<div class="detail-field"><span class="label">Notes</span>${escape(build.notes)}</div>`
+        : ""
+    }
+        ${
+      build.specs
+        ? `<div class="detail-field"><span class="label">Specs</span><pre style="font-size:.8rem;background:#0d1117;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;color:#79c0ff">${
+          escape(build.specs)
+        }</pre></div>`
+        : ""
+    }
+        <div class="actions">
+          <a href="/builds/${id}/edit" class="btn btn-primary btn-sm">Edit</a>
+          <a href="/builds/${id}/photo" class="btn btn-sm">Change photo</a>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>History</h2>
+          ${historyHtml || '<p class="empty">No history.</p>'}
+        </div>
+      </div>
     </div>
 
-    ${quickAddForm(id)}
+    <div class="card">
+      <h2>Bill of Materials</h2>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+          <thead>
+            <tr style="color:#8b949e;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">
+              <th style="text-align:left;padding:4px 0">Component</th>
+              <th style="text-align:right;padding:4px 0">In Build</th>
+              <th style="text-align:right;padding:4px 0">On Hand</th>
+              <th style="text-align:right;padding:4px 0">Allocated</th>
+              <th style="text-align:right;padding:4px 0">Free</th>
+              <th style="text-align:right;padding:4px 0"></th>
+            </tr>
+          </thead>
+          <tbody style="border-top:1px solid #30363d">
+            ${bomRows}
+          </tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <a href="/builds/${id}/components/add" class="btn btn-primary btn-sm">Add component</a>
+      </div>
+    </div>
+  `,
+  );
+}
+
+async function buildAddComponentPage(db: DB, id: number): Promise<string | null> {
+  const build = getBuild(db, id);
+  if (!build) return null;
+  const candidates = listParts(db)
+    .map((p) => ({ part: p, free: freeQuantity(db, p.id) }))
+    .filter(({ free }) => free > 0);
+  const rows = candidates.length > 0
+    ? candidates.map(({ part: p, free }) => `
+        <tr>
+          <td style="padding:8px 6px">
+            <a href="/parts/${p.id}">${escape(p.name)}</a>
+            ${p.type ? typeBadge(p.type) : ""}
+          </td>
+          <td style="padding:8px 6px;text-align:center;color:#8b949e">${free}</td>
+          <td style="padding:8px 6px;text-align:center">
+            <input type="number" name="qty_${p.id}" min="0" max="${free}" value="0"
+              style="width:70px;text-align:center"
+              aria-label="Quantity of ${escape(p.name)} to install">
+          </td>
+        </tr>`).join("")
+    : `<tr><td colspan="3" style="padding:12px;color:#8b949e">No stock available.</td></tr>`;
+
+  return layout(
+    `Add component — ${build.name}`,
+    `
+    <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> ›
+      <a href="/builds/${id}">${escape(build.name)}</a></div>
+    <div class="card">
+      <h2>Add component to ${escape(build.name)}</h2>
+      <form method="POST" action="/builds/${id}/components/add">
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+            <thead>
+              <tr style="color:#8b949e;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">
+                <th style="text-align:left;padding:4px 0">Part</th>
+                <th style="text-align:right;padding:4px 0">On Hand</th>
+                <th style="text-align:right;padding:4px 0">Use Qty</th>
+              </tr>
+            </thead>
+            <tbody style="border-top:1px solid #30363d">
+              ${rows}
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+          <button type="submit" class="btn btn-primary">Add components</button>
+          <a href="/builds/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
   `,
   );
 }
@@ -815,7 +957,7 @@ async function partEditPage(db: DB, id: number): Promise<string | null> {
   );
 }
 
-async function partMovePage(db: DB, id: number): Promise<string | null> {
+async function partInstallPage(db: DB, id: number): Promise<string | null> {
   const part = getPart(db, id);
   if (!part) return null;
   const breadcrumb = await buildBreadcrumb(db, id);
@@ -823,28 +965,36 @@ async function partMovePage(db: DB, id: number): Promise<string | null> {
     .map((p) => `<option value="${p.id}">${escape(p.name)}</option>`)
     .join("");
 
+  const buildOptions = listBuilds(db)
+    .map((b) => `<option value="${b.id}">${escape(b.name)}</option>`)
+    .join("");
+
   return layout(
-    `Move ${part.name}`,
+    `Install ${part.name}`,
     `
     ${breadcrumb}
     <div class="card">
-      <h2>Move ${escape(part.name)}</h2>
-      <form method="POST" action="/parts/${id}/move">
+      <h2>Install ${escape(part.name)} in a build</h2>
+      <form method="POST" action="/parts/${id}/install">
         <div class="field">
-          <label>Move to assembly (or spare parts)</label>
-          <select name="new_parent_id">
-            <option value=""${
-      part.parent_id == null ? " selected" : ""
-    }>(spare parts / top-level)</option>
-            ${parentOptions}
-          </select>
+          <label>Build</label>
+          <select name="build_id">${buildOptions}</select>
+        </div>
+        <div class="field">
+          <label>Quantity</label>
+          <input name="quantity" type="number" min="1" max="${freeQuantity(db, part.id)}" value="1"
+            style="max-width:120px">
+        </div>
+        <div class="field">
+          <label>Role (optional)</label>
+          <input name="role" placeholder="e.g. motors, fc-aio">
         </div>
         <div class="field">
           <label>Reason (optional)</label>
           <input name="notes" placeholder="e.g. Salvaged from crash">
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button type="submit" class="btn btn-primary">Move</button>
+          <button type="submit" class="btn btn-primary">Install</button>
           <a href="/parts/${id}" class="btn">Cancel</a>
         </div>
       </form>
@@ -885,10 +1035,10 @@ async function partPhotoPage(db: DB, id: number): Promise<string | null> {
 }
 
 function buildsNewPage(db: DB, error?: string): string {
-  // Show top-level non-craft parts with quantity > 0 as candidates
-  const parts = listParts(db, { parent_id: null }).filter(
-    (p) => p.type !== "craft" && p.quantity > 0,
-  );
+  // Offer only parts with unallocated stock, capped at their free quantity.
+  const parts = listParts(db)
+    .map((p) => ({ part: p, free: freeQuantity(db, p.id) }))
+    .filter(({ free }) => free > 0);
 
   const errorHtml = error
     ? `<div style="background:#3d1515;border:1px solid #b91c1c;border-radius:6px;padding:10px 14px;margin-bottom:12px;color:#fca5a5;font-size:.875rem">${
@@ -897,19 +1047,19 @@ function buildsNewPage(db: DB, error?: string): string {
     : "";
 
   const partRows = parts.length > 0
-    ? parts.map((p) => `
+    ? parts.map(({ part: p, free }) => `
         <tr>
           <td style="padding:8px 6px">
             <a href="/parts/${p.id}">${escape(p.name)}</a>
             ${p.type ? typeBadge(p.type) : ""}
           </td>
-          <td style="padding:8px 6px;text-align:center;color:#8b949e">${p.quantity}</td>
+          <td style="padding:8px 6px;text-align:center;color:#8b949e">${free}</td>
           <td style="padding:8px 6px;text-align:center">
             <input
               type="number"
               name="qty_${p.id}"
               min="0"
-              max="${p.quantity}"
+              max="${free}"
               value="0"
               style="width:70px;text-align:center"
               aria-label="Quantity of ${escape(p.name)} to install"
@@ -961,6 +1111,91 @@ function buildsNewPage(db: DB, error?: string): string {
   );
 }
 
+async function buildEditPage(db: DB, id: number): Promise<string | null> {
+  const build = getBuild(db, id);
+  if (!build) return null;
+
+  return layout(
+    `Edit ${build.name}`,
+    `
+    <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> › <a href="/builds/${id}">${
+      escape(build.name)
+    }</a> › Edit</div>
+    <div class="card">
+      <h2>Edit ${escape(build.name)}</h2>
+      <form method="POST" action="/builds/${id}/update">
+        <div class="field">
+          <label>Status</label>
+          <select name="status">
+            ${
+      (["unused", "in-use", "broken", "retired", "lost"] as PartStatus[])
+        .map((s) =>
+          `<option value="${s}"${s === build.status ? " selected" : ""}>${
+            STATUS_LABELS[s]
+          }</option>`
+        )
+        .join("")
+    }
+          </select>
+        </div>
+        <div class="field">
+          <label>Class</label>
+          <input name="class" value="${
+      escape(build.class ?? "")
+    }" placeholder="e.g. whoop, 5-inch freestyle">
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">${escape(build.notes ?? "")}</textarea>
+        </div>
+        <div class="field">
+          <label>Specs</label>
+          <textarea name="specs" rows="4" style="font-family:monospace;font-size:.82rem">${
+      escape(build.specs ?? "")
+    }</textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save changes</button>
+          <a href="/builds/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
+async function buildPhotoPage(db: DB, id: number): Promise<string | null> {
+  const build = getBuild(db, id);
+  if (!build) return null;
+
+  const currentPhoto = build.photo_path
+    ? `<img src="/photos/${escape(build.photo_path)}" alt="photo" class="photo-preview">`
+    : `<p class="empty">No photo yet.</p>`;
+
+  return layout(
+    `Photo — ${build.name}`,
+    `
+    <div class="breadcrumb"><a href="/">Home</a> › <a href="/builds">Builds</a> › <a href="/builds/${id}">${
+      escape(build.name)
+    }</a> › Photo</div>
+    <div class="card">
+      <h2>Photo for ${escape(build.name)}</h2>
+      ${currentPhoto}
+      <form method="POST" action="/builds/${id}/photo" enctype="multipart/form-data">
+        <div class="field">
+          <label>Upload photo</label>
+          <input type="file" name="photo" accept="image/*">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Upload</button>
+          <a href="/builds/${id}" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
 export function makeHandler(db: DB) {
   return async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -995,26 +1230,19 @@ export function makeHandler(db: DB) {
       const typeStr = form.get("type")?.toString() || undefined;
       const type = typeStr ? typeStr as PartType : undefined;
       const notes = form.get("notes")?.toString().trim() || undefined;
-      const parentIdStr = form.get("parent_id")?.toString();
-      const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
-      const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
-
       try {
-        createPart(db, { name, quantity, status, type, notes, parent_id });
+        createPart(db, { name, quantity, status, type, notes });
       } catch (err) {
         console.error("Failed to create part:", err);
         return new Response("Failed to create part", { status: 500 });
       }
 
-      const redirect = parent_id != null ? `/parts/${parent_id}` : "/";
-      return new Response(null, { status: 303, headers: { Location: redirect } });
+      return new Response(null, { status: 303, headers: { Location: "/" } });
     }
 
     // GET /parts/new — full add form
     if (path === "/parts/new" && req.method === "GET") {
-      const parentIdStr = url.searchParams.get("parent_id");
-      const parentId = parentIdStr ? parseInt(parentIdStr, 10) : undefined;
-      return new Response(fullAddForm(parentId), {
+      return new Response(fullAddForm(), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -1032,9 +1260,6 @@ export function makeHandler(db: DB) {
       const type = typeStr ? typeStr as PartType : undefined;
       const notes = form.get("notes")?.toString().trim() || undefined;
       const specs = form.get("specs")?.toString().trim() || undefined;
-      const parentIdStr = form.get("parent_id")?.toString();
-      const parsedParentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
-      const parent_id = (parsedParentId != null && !isNaN(parsedParentId)) ? parsedParentId : null;
       const serial_number = form.get("serial_number")?.toString().trim() || null;
       const warranty_expiry = form.get("warranty_expiry")?.toString() || null;
       const purchase_date = form.get("purchase_date")?.toString() || null;
@@ -1050,7 +1275,6 @@ export function makeHandler(db: DB) {
           type,
           notes,
           specs,
-          parent_id,
           serial_number,
           warranty_expiry,
           purchase_date,
@@ -1081,13 +1305,140 @@ export function makeHandler(db: DB) {
       return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
-    // GET /parts/:id/move
-    const movePageMatch = path.match(/^\/parts\/(\d+)\/move$/);
-    if (movePageMatch && req.method === "GET") {
-      const id = parseInt(movePageMatch[1], 10);
-      const page = await partMovePage(db, id);
+    // GET /parts/:id/install
+    const installPageMatch = path.match(/^\/parts\/(\d+)\/install$/);
+    if (installPageMatch && req.method === "GET") {
+      const id = parseInt(installPageMatch[1], 10);
+      const page = await partInstallPage(db, id);
       if (!page) return new Response("Not Found", { status: 404 });
       return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /builds
+    if (path === "/builds" && req.method === "GET") {
+      return new Response(buildsPage(db), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // GET /builds/:id
+    const buildDetailMatch = path.match(/^\/builds\/(\d+)$/);
+    if (buildDetailMatch && req.method === "GET") {
+      const id = parseInt(buildDetailMatch[1], 10);
+      const page = await buildDetailPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /builds/:id/components/add
+    const buildAddComponentMatch = path.match(/^\/builds\/(\d+)\/components\/add$/);
+    if (buildAddComponentMatch && req.method === "GET") {
+      const id = parseInt(buildAddComponentMatch[1], 10);
+      const page = await buildAddComponentPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /builds/:id/edit
+    const buildEditMatch = path.match(/^\/builds\/(\d+)\/edit$/);
+    if (buildEditMatch && req.method === "GET") {
+      const id = parseInt(buildEditMatch[1], 10);
+      const page = await buildEditPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // GET /builds/:id/photo
+    const buildPhotoPageMatch = path.match(/^\/builds\/(\d+)\/photo$/);
+    if (buildPhotoPageMatch && req.method === "GET") {
+      const id = parseInt(buildPhotoPageMatch[1], 10);
+      const page = await buildPhotoPage(db, id);
+      if (!page) return new Response("Not Found", { status: 404 });
+      return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // POST /builds/:id/components/add
+    const buildAddComponentPost = path.match(/^\/builds\/(\d+)\/components\/add$/);
+    if (buildAddComponentPost && req.method === "POST") {
+      const id = parseInt(buildAddComponentPost[1], 10);
+      const form = await req.formData();
+      const selections: { partId: number; qty: number }[] = [];
+      for (const [key, value] of form.entries()) {
+        const m = key.match(/^qty_(\d+)$/);
+        if (!m) continue;
+        const qty = Number(value.toString());
+        if (qty === 0) continue; // zero marks an unselected picker row
+        if (!Number.isInteger(qty) || qty < 1) {
+          return new Response("Quantities must be whole numbers ≥ 1", { status: 400 });
+        }
+        selections.push({ partId: parseInt(m[1], 10), qty });
+      }
+      if (selections.length === 0) {
+        return new Response("No quantities given", { status: 400 });
+      }
+      try {
+        // One transaction — a bad selection must not leave a partial BOM.
+        db.transaction(() => {
+          for (const sel of selections) {
+            addBuildComponent(db, id, sel.partId, sel.qty);
+          }
+        });
+      } catch (err) {
+        console.error("Failed to add component:", err);
+        return new Response("Failed to add component", { status: 500 });
+      }
+      return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
+    }
+
+    // POST /builds/:id/update
+    const buildUpdateMatch = path.match(/^\/builds\/(\d+)\/update$/);
+    if (buildUpdateMatch && req.method === "POST") {
+      const id = parseInt(buildUpdateMatch[1], 10);
+      const build = getBuild(db, id);
+      if (!build) return new Response("Not Found", { status: 404 });
+      const form = await req.formData();
+      const status = form.get("status")?.toString() as PartStatus | undefined;
+      const formFields: { class?: string | null; notes?: string; specs?: string } = {};
+      if (form.has("class")) formFields.class = form.get("class")!.toString().trim() || null;
+      if (form.has("notes")) formFields.notes = form.get("notes")!.toString();
+      if (form.has("specs")) formFields.specs = form.get("specs")!.toString();
+      try {
+        updateBuild(db, id, { status, ...formFields });
+      } catch (err) {
+        console.error("Failed to update build:", err);
+        return new Response("Failed to update build", { status: 500 });
+      }
+      return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
+    }
+
+    // POST /builds/:id/photo
+    const buildPhotoUploadMatch = path.match(/^\/builds\/(\d+)\/photo$/);
+    if (buildPhotoUploadMatch && req.method === "POST") {
+      const id = parseInt(buildPhotoUploadMatch[1], 10);
+      const build = getBuild(db, id);
+      if (!build) return new Response("Not Found", { status: 404 });
+      const form = await req.formData();
+      const file = form.get("photo");
+      if (!file || !(file instanceof File) || file.size === 0) {
+        return new Response("No file provided", { status: 400 });
+      }
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const filename = `build-${id}-${Date.now()}.${ext}`;
+      await Deno.mkdir(PHOTOS_DIR, { recursive: true });
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await Deno.writeFile(`${PHOTOS_DIR}/${filename}`, bytes);
+      updateBuild(db, id, { photo_path: filename });
+      return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
+    }
+
+    // POST /builds/:id/components/remove
+    const buildRemoveComponent = path.match(/^\/builds\/(\d+)\/components\/remove$/);
+    if (buildRemoveComponent && req.method === "POST") {
+      const id = parseInt(buildRemoveComponent[1], 10);
+      const form = await req.formData();
+      const componentId = parseInt(form.get("component_id")?.toString() ?? "", 10);
+      if (!isNaN(componentId)) removeBuildComponent(db, id, componentId);
+      return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
     }
 
     // GET /parts/:id/photo
@@ -1153,24 +1504,28 @@ export function makeHandler(db: DB) {
       return new Response(null, { status: 303, headers: { Location: `/parts/${id}` } });
     }
 
-    // POST /parts/:id/move
-    const moveMatch = path.match(/^\/parts\/(\d+)\/move$/);
-    if (moveMatch && req.method === "POST") {
-      const id = parseInt(moveMatch[1], 10);
+    // POST /parts/:id/install
+    const installMatch = path.match(/^\/parts\/(\d+)\/install$/);
+    if (installMatch && req.method === "POST") {
+      const id = parseInt(installMatch[1], 10);
       const part = getPart(db, id);
       if (!part) return new Response("Not Found", { status: 404 });
       const form = await req.formData();
-      const newParentIdStr = form.get("new_parent_id")?.toString();
-      const newParentId = newParentIdStr ? parseInt(newParentIdStr, 10) : null;
+      const buildId = parseInt(form.get("build_id")?.toString() ?? "", 10);
+      const quantity = Number(form.get("quantity")?.toString() ?? "1");
+      const role = form.get("role")?.toString().trim() || null;
       const notes = form.get("notes")?.toString() || undefined;
-      try {
-        movePart(db, id, newParentId, notes);
-      } catch (err) {
-        console.error("Failed to move part:", err);
-        return new Response("Failed to move part", { status: 500 });
+      if (isNaN(buildId)) return new Response("Build is required", { status: 400 });
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        return new Response("Quantity must be a whole number ≥ 1", { status: 400 });
       }
-      const redirect = newParentId != null ? `/parts/${newParentId}` : "/";
-      return new Response(null, { status: 303, headers: { Location: redirect } });
+      try {
+        addBuildComponent(db, buildId, id, quantity, role, notes);
+      } catch (err) {
+        console.error("Failed to install part:", err);
+        return new Response("Failed to install part", { status: 500 });
+      }
+      return new Response(null, { status: 303, headers: { Location: `/builds/${buildId}` } });
     }
 
     // POST /parts/:id/photo
@@ -1270,7 +1625,7 @@ export function makeHandler(db: DB) {
         });
       }
 
-      return new Response(null, { status: 303, headers: { Location: `/parts/${craftId}` } });
+      return new Response(null, { status: 303, headers: { Location: `/builds/${craftId}` } });
     }
 
     return new Response("Not Found", { status: 404 });

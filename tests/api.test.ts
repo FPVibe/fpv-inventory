@@ -1,5 +1,12 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createPart, initDb, type PartStatus, type PartType } from "../db.ts";
+import {
+  addBuildComponent,
+  createBuild,
+  createPart,
+  initDb,
+  type PartStatus,
+  type PartType,
+} from "../db.ts";
 import { makeHandler } from "../main.ts";
 import { VERSION } from "../version.ts";
 
@@ -112,45 +119,12 @@ Deno.test("GET /api/parts filters by status", async () => {
   assertEquals(body[0].name, "Motor B");
 });
 
-Deno.test("GET /api/parts?parent_id=0 returns only top-level parts", async () => {
+Deno.test("GET /api/parts has no parent_id field (builds are not containment)", async () => {
   const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
-  const res = await handler(new Request("http://localhost/api/parts?parent_id=0"));
+  createPart(db, { name: "Motor", quantity: 4, status: "unused" });
+  const res = await handler(new Request("http://localhost/api/parts"));
   const body = await res.json();
-  assertEquals(body.length, 1);
-  assertEquals(body[0].name, "Quad");
-});
-
-Deno.test("GET /api/parts?parent_id=<garbage> ignores the malformed filter instead of matching a partial number", async () => {
-  const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
-  createPart(db, { name: "Loose Prop", quantity: 10, status: "unused" });
-  // "12abc" must not be parsed as parent_id=12 (parseInt would stop at the first non-digit)
-  const res = await handler(new Request(`http://localhost/api/parts?parent_id=${quadId}abc`));
-  const body = await res.json();
-  assertEquals(body.length, 3);
-});
-
-Deno.test("GET /api/parts?parent_id=-1 rejects negative ids instead of filtering by them", async () => {
-  const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
-  // Real ids are never negative; -1 must be ignored as malformed, not applied as a (perpetually empty) filter
-  const res = await handler(new Request("http://localhost/api/parts?parent_id=-1"));
-  const body = await res.json();
-  assertEquals(body.length, 2);
-});
-
-Deno.test("GET /api/parts?parent_id=<id> returns children of that part", async () => {
-  const { db, handler } = makeApp();
-  const quadId = createPart(db, { name: "Quad", quantity: 1, status: "in-use" });
-  createPart(db, { name: "Motor", quantity: 4, status: "in-use", parent_id: quadId });
-  const res = await handler(new Request(`http://localhost/api/parts?parent_id=${quadId}`));
-  const body = await res.json();
-  assertEquals(body.length, 1);
-  assertEquals(body[0].name, "Motor");
+  assertEquals("parent_id" in body[0], false);
 });
 
 Deno.test("GET /api/parts?q= matches case-insensitive substring of name", async () => {
@@ -207,48 +181,41 @@ Deno.test("GET /api/builds returns [] for an empty DB", async () => {
   assertEquals(await res.json(), []);
 });
 
-Deno.test("GET /api/builds returns only top-level crafts", async () => {
+Deno.test("GET /api/builds returns builds, not parts", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
-  createPart(db, {
-    name: "0702 Motor",
-    quantity: 4,
-    status: "in-use",
-    type: "motor",
-    parent_id: craftId,
-  });
+  createBuild(db, { name: "LionBee", status: "in-use" });
   createPart(db, { name: "Loose Frame", quantity: 1, status: "unused", type: "frame" });
   const res = await handler(new Request("http://localhost/api/builds"));
   const body = await res.json();
   assertEquals(body.length, 1);
   assertEquals(body[0].name, "LionBee");
+  // A build is not a part — no part fields leak through
+  assertEquals("type" in body[0], false);
+  assertEquals("quantity" in body[0], false);
 });
 
-Deno.test("GET /api/builds excludes crafts nested inside another craft", async () => {
+Deno.test("GET /api/builds returns the build's own fields", async () => {
   const { db, handler } = makeApp();
-  const parentId = createPart(db, {
-    name: "Salvage Bin",
-    quantity: 1,
+  createBuild(db, {
+    name: "LionBee",
     status: "in-use",
-    type: "craft",
-  });
-  createPart(db, {
-    name: "Retired Whoop",
-    quantity: 1,
-    status: "retired",
-    type: "craft",
-    parent_id: parentId,
+    class: "5-inch freestyle",
+    notes: "mushy on exit",
+    specs: "FC: BetaFPV F4 1S",
   });
   const res = await handler(new Request("http://localhost/api/builds"));
   const body = await res.json();
-  assertEquals(body.length, 1);
-  assertEquals(body[0].name, "Salvage Bin");
+  assertEquals(body[0].class, "5-inch freestyle");
+  assertEquals(body[0].notes, "mushy on exit");
+  assertEquals(body[0].specs, "FC: BetaFPV F4 1S");
+  assertExists(body[0].created_at);
+  assertExists(body[0].updated_at);
 });
 
 Deno.test("GET /api/builds filters by status", async () => {
   const { db, handler } = makeApp();
-  createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
-  createPart(db, { name: "Old Toothpick", quantity: 1, status: "retired", type: "craft" });
+  createBuild(db, { name: "LionBee", status: "in-use" });
+  createBuild(db, { name: "Old Toothpick", status: "retired" });
   const res = await handler(new Request("http://localhost/api/builds?status=retired"));
   const body = await res.json();
   assertEquals(body.length, 1);
@@ -257,7 +224,7 @@ Deno.test("GET /api/builds filters by status", async () => {
 
 Deno.test("GET /api/builds?status=<invalid> returns [] not an error", async () => {
   const { db, handler } = makeApp();
-  createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
+  createBuild(db, { name: "LionBee", status: "in-use" });
   const res = await handler(new Request("http://localhost/api/builds?status=not-a-real-status"));
   assertEquals(res.status, 200);
   assertEquals(await res.json(), []);
@@ -265,8 +232,8 @@ Deno.test("GET /api/builds?status=<invalid> returns [] not an error", async () =
 
 Deno.test("GET /api/builds?q= matches case-insensitive substring of name", async () => {
   const { db, handler } = makeApp();
-  createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
-  createPart(db, { name: "Toothpick", quantity: 1, status: "in-use", type: "craft" });
+  createBuild(db, { name: "LionBee", status: "in-use" });
+  createBuild(db, { name: "Toothpick", status: "in-use" });
   const res = await handler(new Request("http://localhost/api/builds?q=lion"));
   const body = await res.json();
   assertEquals(body.length, 1);
@@ -275,51 +242,46 @@ Deno.test("GET /api/builds?q= matches case-insensitive substring of name", async
 
 // ─── GET /api/builds/:id ──────────────────────────────────────────────────────
 
-Deno.test("GET /api/builds/:id returns the build with its children", async () => {
+Deno.test("GET /api/builds/:id returns the build with its components", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, { name: "LionBee", quantity: 1, status: "in-use", type: "craft" });
-  createPart(db, {
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+  const motorId = createPart(db, {
     name: "0702 Motor",
-    quantity: 4,
-    status: "in-use",
+    quantity: 12,
+    status: "unused",
     type: "motor",
-    parent_id: craftId,
-    specs: "KV: 19000",
     notes: "stock motors",
   });
-  const res = await handler(new Request(`http://localhost/api/builds/${craftId}`));
+  addBuildComponent(db, buildId, motorId, 4, "motors");
+  const res = await handler(new Request(`http://localhost/api/builds/${buildId}`));
   assertEquals(res.status, 200);
   const body = await res.json();
-  assertEquals(body.id, craftId);
+  assertEquals(body.id, buildId);
   assertEquals(body.name, "LionBee");
   assertExists(body.created_at);
   assertExists(body.updated_at);
-  assertEquals(body.children.length, 1);
-  assertEquals(body.children[0], {
-    id: body.children[0].id,
+  assertEquals(body.components.length, 1);
+  assertExists(body.components[0].id);
+  delete body.components[0].id;
+  assertEquals(body.components[0], {
+    part_id: motorId,
     name: "0702 Motor",
     type: "motor",
-    status: "in-use",
     quantity: 4,
-    specs: "KV: 19000",
-    notes: "stock motors",
+    role: "motors",
+    notes: null,
   });
 });
 
-Deno.test("GET /api/builds/:id returns children: [] for a build with none", async () => {
+Deno.test("GET /api/builds/:id returns components: [] for a build with none", async () => {
   const { db, handler } = makeApp();
-  const craftId = createPart(db, {
-    name: "Empty Frame",
-    quantity: 1,
-    status: "unused",
-    type: "craft",
-  });
-  const res = await handler(new Request(`http://localhost/api/builds/${craftId}`));
+  const buildId = createBuild(db, { name: "Empty Frame", status: "unused" });
+  const res = await handler(new Request(`http://localhost/api/builds/${buildId}`));
   const body = await res.json();
-  assertEquals(body.children, []);
+  assertEquals(body.components, []);
 });
 
-Deno.test("GET /api/builds/:id returns 404 for a non-craft part id", async () => {
+Deno.test("GET /api/builds/:id returns 404 for a part id that is not a build", async () => {
   const { db, handler } = makeApp();
   const motorId = createPart(db, {
     name: "Loose Motor",
@@ -328,27 +290,6 @@ Deno.test("GET /api/builds/:id returns 404 for a non-craft part id", async () =>
     type: "motor",
   });
   const res = await handler(new Request(`http://localhost/api/builds/${motorId}`));
-  assertEquals(res.status, 404);
-  const body = await res.json();
-  assertEquals(body.error, "Build not found");
-});
-
-Deno.test("GET /api/builds/:id returns 404 for a craft that isn't top-level", async () => {
-  const { db, handler } = makeApp();
-  const parentId = createPart(db, {
-    name: "Salvage Bin",
-    quantity: 1,
-    status: "in-use",
-    type: "craft",
-  });
-  const nestedId = createPart(db, {
-    name: "Retired Whoop",
-    quantity: 1,
-    status: "retired",
-    type: "craft",
-    parent_id: parentId,
-  });
-  const res = await handler(new Request(`http://localhost/api/builds/${nestedId}`));
   assertEquals(res.status, 404);
   const body = await res.json();
   assertEquals(body.error, "Build not found");
