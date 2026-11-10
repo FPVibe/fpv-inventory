@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "fpv-inventory",
-    "version": "1.0.0",
-    "description": "FPV quad parts, builds, and gear inventory API — part of the FPVibe federation of tools."
+    "version": "2.0.0",
+    "description": "FPV quad parts, builds, and gear inventory API \u2014 part of the FPVibe federation of tools."
   },
   "servers": [
     {
@@ -16,7 +16,9 @@
       "get": {
         "operationId": "getHealth",
         "summary": "Health check",
-        "tags": ["meta"],
+        "tags": [
+          "meta"
+        ],
         "responses": {
           "200": {
             "description": "Service is healthy",
@@ -24,11 +26,24 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["status", "version", "name"],
+                  "required": [
+                    "status",
+                    "version",
+                    "name"
+                  ],
                   "properties": {
-                    "status": { "type": "string", "example": "ok" },
-                    "version": { "type": "string", "example": "1.0.0" },
-                    "name": { "type": "string", "example": "fpv-inventory" }
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "version": {
+                      "type": "string",
+                      "example": "1.0.0"
+                    },
+                    "name": {
+                      "type": "string",
+                      "example": "fpv-inventory"
+                    }
                   }
                 }
               }
@@ -41,7 +56,9 @@
       "get": {
         "operationId": "getOpenApiSpec",
         "summary": "OpenAPI spec (this document)",
-        "tags": ["meta"],
+        "tags": [
+          "meta"
+        ],
         "responses": {
           "200": {
             "description": "OpenAPI 3.1 document",
@@ -62,31 +79,42 @@
         "operationId": "listParts",
         "summary": "List inventory parts",
         "description": "Returns all parts matching the given filters. Unknown type or status values return an empty array rather than an error.",
-        "tags": ["parts"],
+        "tags": [
+          "parts"
+        ],
         "parameters": [
           {
             "name": "type",
             "in": "query",
             "description": "Filter by part type",
-            "schema": { "$ref": "#/components/schemas/PartType" }
+            "schema": {
+              "$ref": "#/components/schemas/PartType"
+            }
           },
           {
             "name": "status",
             "in": "query",
             "description": "Filter by status",
-            "schema": { "$ref": "#/components/schemas/PartStatus" }
+            "schema": {
+              "$ref": "#/components/schemas/PartStatus"
+            }
           },
           {
             "name": "q",
             "in": "query",
             "description": "Case-insensitive substring search on name",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "parent_id",
             "in": "query",
             "description": "Filter by parent assembly ID. Use 0 to get top-level parts (parent_id IS NULL). Negative or non-integer values are ignored.",
-            "schema": { "type": "integer", "minimum": 0 }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -96,7 +124,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Part" }
+                  "items": {
+                    "$ref": "#/components/schemas/Part"
+                  }
                 }
               }
             }
@@ -108,20 +138,33 @@
       "get": {
         "operationId": "getPart",
         "summary": "Get part with history",
-        "tags": ["parts"],
+        "tags": [
+          "parts"
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "Part with full history",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PartWithHistory" }
+                "schema": {
+                  "$ref": "#/components/schemas/PartWithHistory"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -129,29 +172,37 @@
       "get": {
         "operationId": "listBuilds",
         "summary": "List builds",
-        "description": "Returns top-level parts with type=craft. Nested crafts (parent_id set) are excluded.",
-        "tags": ["builds"],
+        "description": "Returns all builds. Builds are their own entities \u2014 not parts.",
+        "tags": [
+          "builds"
+        ],
         "parameters": [
           {
             "name": "status",
             "in": "query",
-            "schema": { "$ref": "#/components/schemas/PartStatus" }
+            "schema": {
+              "$ref": "#/components/schemas/PartStatus"
+            }
           },
           {
             "name": "q",
             "in": "query",
             "description": "Case-insensitive substring search on name",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Array of build parts (may be empty)",
+            "description": "Array of builds (may be empty)",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Part" }
+                  "items": {
+                    "$ref": "#/components/schemas/Build"
+                  }
                 }
               }
             }
@@ -163,21 +214,34 @@
       "get": {
         "operationId": "getBuild",
         "summary": "Get build with components",
-        "description": "Returns a top-level craft part with its direct children. 404 if the id belongs to a non-craft part or a nested craft.",
-        "tags": ["builds"],
+        "description": "Returns a build with its BOM components. 404 if the id is not a build.",
+        "tags": [
+          "builds"
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
-            "description": "Build part with children",
+            "description": "Build with components",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Build" }
+                "schema": {
+                  "$ref": "#/components/schemas/BuildWithComponents"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -185,10 +249,19 @@
       "get": {
         "operationId": "getBuildBom",
         "summary": "Get build BOM with allocation data",
-        "description": "Returns the build's direct children with per-component on-hand / allocated / free figures for the component's name+type group.",
-        "tags": ["builds"],
+        "description": "Returns the build's component rows with per-part on-hand / allocated / free figures. Allocation is by part_id.",
+        "tags": [
+          "builds"
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -197,12 +270,16 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/BomItem" }
+                  "items": {
+                    "$ref": "#/components/schemas/BomItem"
+                  }
                 }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -211,20 +288,33 @@
         "operationId": "getPartAllocation",
         "summary": "Get part allocation summary",
         "description": "Returns on-hand / allocated / free figures for the part's name+type group, plus the builds it is installed in. Allocation groups rows by matching name and type.",
-        "tags": ["parts"],
+        "tags": [
+          "parts"
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "Allocation summary for the part's group",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Allocation" }
+                "schema": {
+                  "$ref": "#/components/schemas/Allocation"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -233,18 +323,24 @@
         "operationId": "listGear",
         "summary": "List gear",
         "description": "Returns parts with type=gear. Unknown status values return an empty array rather than an error.",
-        "tags": ["gear"],
+        "tags": [
+          "gear"
+        ],
         "parameters": [
           {
             "name": "status",
             "in": "query",
-            "schema": { "$ref": "#/components/schemas/PartStatus" }
+            "schema": {
+              "$ref": "#/components/schemas/PartStatus"
+            }
           },
           {
             "name": "q",
             "in": "query",
             "description": "Case-insensitive substring search on name",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -254,7 +350,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Part" }
+                  "items": {
+                    "$ref": "#/components/schemas/Part"
+                  }
                 }
               }
             }
@@ -267,20 +365,33 @@
         "operationId": "getGear",
         "summary": "Get gear with history",
         "description": "Returns a single gear part with its full history. 404 if the id belongs to a non-gear part.",
-        "tags": ["gear"],
+        "tags": [
+          "gear"
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "Gear part with full history",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PartWithHistory" }
+                "schema": {
+                  "$ref": "#/components/schemas/PartWithHistory"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -289,15 +400,19 @@
         "operationId": "getStock",
         "summary": "Aggregate stock by type and status",
         "description": "Returns every part grouped by type and status with summed quantities. All types are included (craft, gear, etc.); consumers filter as needed.",
-        "tags": ["stock"],
+        "tags": [
+          "stock"
+        ],
         "responses": {
           "200": {
-            "description": "Array of type × status aggregates",
+            "description": "Array of type \u00d7 status aggregates",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/StockRow" }
+                  "items": {
+                    "$ref": "#/components/schemas/StockRow"
+                  }
                 }
               }
             }
@@ -327,142 +442,319 @@
       },
       "PartStatus": {
         "type": "string",
-        "enum": ["unused", "in-use", "broken", "retired", "lost"],
+        "enum": [
+          "unused",
+          "in-use",
+          "broken",
+          "retired",
+          "lost"
+        ],
         "description": "Lifecycle status of the part"
       },
       "Part": {
         "type": "object",
-        "required": ["id", "name", "status", "quantity", "created_at", "updated_at"],
+        "required": [
+          "id",
+          "name",
+          "status",
+          "quantity",
+          "created_at",
+          "updated_at"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "status": { "$ref": "#/components/schemas/PartStatus" },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PartStatus"
+          },
           "type": {
-            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }],
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PartType"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Null if not categorised"
           },
-          "notes": { "type": ["string", "null"] },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "specs": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Free-form spec block from product listing"
           },
-          "quantity": { "type": "integer", "minimum": 0 },
-          "parent_id": {
-            "type": ["integer", "null"],
-            "description": "ID of parent assembly; null for top-level parts"
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total owned. Allocation to builds is tracked separately (see /api/builds/{id}/bom)."
           },
           "photo_path": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Filename relative to PHOTOS_DIR"
           },
-          "serial_number": { "type": ["string", "null"] },
+          "serial_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "warranty_expiry": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date",
             "description": "ISO 8601 date (YYYY-MM-DD)"
           },
-          "purchase_date": { "type": ["string", "null"], "format": "date" },
+          "purchase_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
           "purchase_price": {
-            "type": ["number", "null"],
+            "type": [
+              "number",
+              "null"
+            ],
             "description": "Purchase price in the user's local currency"
           },
-          "created_at": { "type": "string", "format": "date-time" },
-          "updated_at": { "type": "string", "format": "date-time" }
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "HistoryEntry": {
         "type": "object",
-        "required": ["id", "part_id", "action", "created_at"],
+        "required": [
+          "id",
+          "part_id",
+          "action",
+          "created_at"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "part_id": { "type": "integer" },
+          "id": {
+            "type": "integer"
+          },
+          "part_id": {
+            "type": "integer"
+          },
           "action": {
             "type": "string",
-            "enum": ["created", "updated", "moved"]
+            "enum": [
+              "created",
+              "updated",
+              "moved"
+            ]
           },
-          "from_parent_id": { "type": ["integer", "null"] },
-          "to_parent_id": { "type": ["integer", "null"] },
-          "old_status": { "type": ["string", "null"] },
-          "new_status": { "type": ["string", "null"] },
-          "quantity_delta": { "type": ["integer", "null"] },
-          "notes": { "type": ["string", "null"] },
-          "created_at": { "type": "string", "format": "date-time" }
+          "from_parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "to_parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "old_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "new_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantity_delta": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "PartWithHistory": {
         "allOf": [
-          { "$ref": "#/components/schemas/Part" },
+          {
+            "$ref": "#/components/schemas/Part"
+          },
           {
             "type": "object",
-            "required": ["history"],
+            "required": [
+              "history"
+            ],
             "properties": {
               "history": {
                 "type": "array",
-                "items": { "$ref": "#/components/schemas/HistoryEntry" }
+                "items": {
+                  "$ref": "#/components/schemas/HistoryEntry"
+                }
               }
             }
           }
         ]
-      },
-      "BuildChild": {
-        "type": "object",
-        "required": ["id", "name", "status", "quantity"],
-        "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "type": {
-            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }]
-          },
-          "status": { "$ref": "#/components/schemas/PartStatus" },
-          "quantity": { "type": "integer" },
-          "specs": { "type": ["string", "null"] },
-          "notes": { "type": ["string", "null"] }
-        }
       },
       "Build": {
-        "allOf": [
-          { "$ref": "#/components/schemas/Part" },
-          {
-            "type": "object",
-            "required": ["children"],
-            "properties": {
-              "children": {
-                "type": "array",
-                "items": { "$ref": "#/components/schemas/BuildChild" },
-                "description": "Direct child components of this build"
-              }
-            }
+        "type": "object",
+        "description": "A flyable aircraft \u2014 its own entity, not a part. Components are allocation rows over parts (build_parts join).",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PartStatus"
+          },
+          "class": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text build class, e.g. '5-inch freestyle'"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "specs": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "photo_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Filename under /photos/, if any"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
           }
-        ]
+        }
       },
       "StockRow": {
         "type": "object",
-        "required": ["type", "status", "total_quantity", "count"],
+        "required": [
+          "type",
+          "status",
+          "total_quantity",
+          "count"
+        ],
         "properties": {
           "type": {
-            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }],
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PartType"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Null if not categorised"
           },
-          "status": { "$ref": "#/components/schemas/PartStatus" },
-          "total_quantity": { "type": "integer", "description": "Summed quantity in this group" },
-          "count": { "type": "integer", "description": "Number of rows in this group" }
+          "status": {
+            "$ref": "#/components/schemas/PartStatus"
+          },
+          "total_quantity": {
+            "type": "integer",
+            "description": "Summed quantity in this group"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of rows in this group"
+          }
         }
       },
       "AllocationBuild": {
         "type": "object",
-        "required": ["build_id", "build_name", "qty"],
+        "required": [
+          "build_id",
+          "build_name",
+          "qty"
+        ],
         "properties": {
-          "build_id": { "type": "integer" },
-          "build_name": { "type": "string" },
-          "qty": { "type": "integer", "description": "Quantity installed in this build" }
+          "build_id": {
+            "type": "integer"
+          },
+          "build_name": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer",
+            "description": "Quantity installed in this build"
+          }
         }
       },
       "Allocation": {
         "type": "object",
-        "required": ["part_id", "part_name", "on_hand", "allocated", "free", "builds"],
+        "required": [
+          "part_id",
+          "part_name",
+          "on_hand",
+          "allocated",
+          "free",
+          "builds"
+        ],
         "properties": {
-          "part_id": { "type": "integer" },
-          "part_name": { "type": "string" },
+          "part_id": {
+            "type": "integer"
+          },
+          "part_name": {
+            "type": "string"
+          },
           "on_hand": {
             "type": "integer",
             "description": "Total quantity across all rows with the same name and type"
@@ -471,10 +763,15 @@
             "type": "integer",
             "description": "Quantity installed in builds"
           },
-          "free": { "type": "integer", "description": "on_hand minus allocated" },
+          "free": {
+            "type": "integer",
+            "description": "on_hand minus allocated"
+          },
           "builds": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/AllocationBuild" },
+            "items": {
+              "$ref": "#/components/schemas/AllocationBuild"
+            },
             "description": "Builds this part is installed in"
           }
         }
@@ -491,20 +788,113 @@
           "free"
         ],
         "properties": {
-          "part_id": { "type": "integer" },
-          "part_name": { "type": "string" },
-          "part_type": {
-            "oneOf": [{ "$ref": "#/components/schemas/PartType" }, { "type": "null" }]
+          "part_id": {
+            "type": "integer"
           },
-          "qty_in_build": { "type": "integer", "description": "Quantity used by this build" },
+          "part_name": {
+            "type": "string"
+          },
+          "part_type": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PartType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qty_in_build": {
+            "type": "integer",
+            "description": "Quantity used by this build"
+          },
           "role": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Role of the component within the build; null when not assigned"
           },
-          "on_hand": { "type": "integer" },
-          "allocated": { "type": "integer" },
-          "free": { "type": "integer" }
+          "on_hand": {
+            "type": "integer"
+          },
+          "allocated": {
+            "type": "integer"
+          },
+          "free": {
+            "type": "integer"
+          }
         }
+      },
+      "BuildComponent": {
+        "type": "object",
+        "description": "One allocation row in a build's BOM. Multiple rows may share a part_id (e.g. different roles).",
+        "required": [
+          "id",
+          "part_id",
+          "name",
+          "quantity"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "build_parts row id \u2014 targets this row for removal"
+          },
+          "part_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PartType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Quantity of the part allocated to this build"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BuildWithComponents": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Build"
+          },
+          {
+            "type": "object",
+            "required": [
+              "components"
+            ],
+            "properties": {
+              "components": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BuildComponent"
+                },
+                "description": "The build's BOM allocation rows"
+              }
+            }
+          }
+        ]
       }
     },
     "responses": {
@@ -514,9 +904,13 @@
           "application/json": {
             "schema": {
               "type": "object",
-              "required": ["error"],
+              "required": [
+                "error"
+              ],
               "properties": {
-                "error": { "type": "string" }
+                "error": {
+                  "type": "string"
+                }
               }
             }
           }
