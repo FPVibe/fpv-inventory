@@ -215,35 +215,33 @@ export function migrateToBuildsModel(db: DB): void {
 
     // 2. Installed children become build_parts rows; their quantity is folded
     //    back into the stock row so the part's quantity is the total owned.
+    //
+    //    Only children of craft parents are processed: children of ordinary
+    //    parts aren't build components, so they're left alone and simply
+    //    become top-level when parent_id is dropped in step 5.
     const children = db.query<
       [number, string, string | null, number, number, string | null, string | null]
     >(
       `SELECT id, name, type, quantity, parent_id, notes, specs
-       FROM parts WHERE parent_id IS NOT NULL AND type <> 'craft'`,
+       FROM parts WHERE parent_id IS NOT NULL AND (type IS NULL OR type <> 'craft')
+         AND parent_id IN (SELECT id FROM parts WHERE type = 'craft')`,
     );
 
     // Stock rows keyed by name+type, so an installed copy can find the row it
     // was drawn from. This mirrors how the v1 allocation engine grouped them.
+    // Distinct stock rows that happen to share a name+type are NOT merged —
+    // they are separate purchases with their own serials, prices and history.
+    // NULL types are included: type is a nullable column.
     const stockByNameType = new Map<string, { id: number; quantity: number }>();
     for (
       const row of db.query<[number, string, string | null, number]>(
         `SELECT id, name, type, quantity FROM parts
-       WHERE parent_id IS NULL AND type <> 'craft'`,
+       WHERE parent_id IS NULL AND (type IS NULL OR type <> 'craft')`,
       )
     ) {
       const key = `${row[2] ?? ""}\u0000${row[1]}`;
-      const existing = stockByNameType.get(key);
-      if (!existing) {
+      if (!stockByNameType.has(key)) {
         stockByNameType.set(key, { id: row[0], quantity: row[3] });
-      } else {
-        // Two stock rows for the same name+type: merge them so the part has
-        // one row and one quantity, matching the v2 one-row-per-part model.
-        db.query("UPDATE parts SET quantity = ? WHERE id = ?", [
-          existing.quantity + row[3],
-          existing.id,
-        ]);
-        existing.quantity += row[3];
-        db.query("DELETE FROM parts WHERE id = ?", [row[0]]);
       }
     }
 
@@ -271,9 +269,11 @@ export function migrateToBuildsModel(db: DB): void {
         );
         continue; // keep the promoted row
       }
-      // The child row is superseded by the build_parts join.
+      // The child row is superseded by the build_parts join. Its history is
+      // reassigned to the surviving stock part so the audit trail (installs,
+      // moves, status changes) is not lost.
+      db.query("UPDATE part_history SET part_id = ? WHERE part_id = ?", [stock.id, childId]);
       db.query("DELETE FROM parts WHERE id = ?", [childId]);
-      db.query("DELETE FROM part_history WHERE part_id = ?", [childId]);
     }
 
     // 3. Craft history becomes build history. This must run before the craft
