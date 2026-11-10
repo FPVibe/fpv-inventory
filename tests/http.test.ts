@@ -5,6 +5,7 @@ import {
   createPart,
   getBuild,
   getBuildHistory,
+  getPartHistory,
   initDb,
   listBuildComponents,
   listParts,
@@ -376,4 +377,19 @@ Deno.test("POST /parts/:id/install rejects a non-integer quantity", async () => 
   );
   assertEquals(res.status, 400);
   assertEquals(listBuildComponents(db, buildId).length, 0);
+});
+
+Deno.test("POST /parts/:id/install records exactly one 'installed' history entry", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "Quad 1", status: "in-use" });
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused" });
+  const form = new FormData();
+  form.append("build_id", String(buildId));
+  form.append("quantity", "2");
+  const res = await handler(
+    new Request(`http://localhost/parts/${motorId}/install`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+  const history = getPartHistory(db, motorId);
+  assertEquals(history.filter((h) => h.action === "installed").length, 1);
 });

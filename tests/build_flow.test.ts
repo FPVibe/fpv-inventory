@@ -188,11 +188,14 @@ Deno.test("assembleBuild records a 'created' build history entry", () => {
   assertEquals(buildHistory[0].action, "created");
   assertEquals(buildHistory[0].new_status, "in-use");
 
-  // Quantity is conserved, so the part has no quantity-change history —
-  // its history is still just the 'created' entry.
+  // Quantity is conserved, so the part has no quantity-change history — but
+  // the allocation itself is recorded as an 'installed' entry pointing at the
+  // build, after the initial 'created'.
   const motorHistory = getPartHistory(db, motorId);
-  assertEquals(motorHistory.length, 1);
+  assertEquals(motorHistory.length, 2);
   assertEquals(motorHistory[0].action, "created");
+  assertEquals(motorHistory[1].action, "installed");
+  assertEquals(motorHistory[1].to_build_id, buildId);
   db.close();
 });
 
@@ -479,4 +482,26 @@ Deno.test("POST /builds/:id/components/add parses '1e1' as ten and skips zeroed 
   const components = listBuildComponents(db, buildId);
   assertEquals(components.length, 1);
   assertEquals(components[0].quantity, 10);
+});
+
+Deno.test("POST /builds/:id/components/add records an 'installed' history entry with to_build_id", async () => {
+  const { db, handler } = makeApp();
+  const motorId = createPart(db, { name: "Motor", quantity: 4, status: "unused", type: "motor" });
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set(`qty_${motorId}`, "2");
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+  assertEquals(res.status, 303);
+
+  const history = getPartHistory(db, motorId);
+  const installed = history.filter((h) => h.action === "installed");
+  assertEquals(installed.length, 1);
+  assertEquals(installed[0].to_build_id, buildId);
 });
