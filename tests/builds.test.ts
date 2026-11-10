@@ -4,6 +4,7 @@ import {
   type BuildComponent,
   createBuild,
   getBuild,
+  getPartHistory,
   initDb,
   listBuildComponents,
   listBuilds,
@@ -282,4 +283,129 @@ Deno.test("migration renames history parent columns to build columns", () => {
   assertEquals(cols.includes("from_build_id"), true);
   assertEquals(cols.includes("to_build_id"), true);
   assertEquals(cols.includes("from_parent_id"), false);
+});
+
+Deno.test("migration includes installed children whose type is NULL", () => {
+  const db = legacyDb();
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (1, 'LionBee', 'in-use', 'craft', 1, NULL)",
+  );
+  // untyped stock row
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (2, 'Unknown Gizmo', 'unused', NULL, 4, NULL)",
+  );
+  // untyped installed copy — `type <> 'craft'` excludes NULL types in SQL
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (3, 'Unknown Gizmo', 'in-use', NULL, 2, 1)",
+  );
+
+  migrateToBuildsModel(db);
+
+  const parts = listParts(db);
+  assertEquals(parts.length, 1);
+  assertEquals(parts[0].quantity, 6);
+  const components = listBuildComponents(db, 1);
+  assertEquals(components.length, 1);
+  assertEquals(components[0].quantity, 2);
+});
+
+Deno.test("migration keeps distinct stock rows that share a name and type", () => {
+  const db = legacyDb();
+  // two separate purchases of the same motor — different serials and prices
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id, serial_number, purchase_price) VALUES (1, '0702 Motor', 'unused', 'motor', 2, NULL, 'SN-A', 15.5)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id, serial_number, purchase_price) VALUES (2, '0702 Motor', 'unused', 'motor', 3, NULL, 'SN-B', 17.0)",
+  );
+  db.query(
+    "INSERT INTO part_history (part_id, action) VALUES (2, 'created')",
+  );
+
+  migrateToBuildsModel(db);
+
+  const parts = listParts(db);
+  assertEquals(parts.length, 2);
+  assertEquals(parts.map((p) => [p.id, p.quantity]), [[1, 2], [2, 3]]);
+  assertEquals(parts[1].serial_number, "SN-B");
+  // the second row's history survives
+  assertEquals(getPartHistory(db, 2).length, 1);
+});
+
+Deno.test("migration folds an installed child into the first matching stock row only", () => {
+  const db = legacyDb();
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (1, '0702 Motor', 'unused', 'motor', 2, NULL)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (2, '0702 Motor', 'unused', 'motor', 3, NULL)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (3, 'LionBee', 'in-use', 'craft', 1, NULL)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (4, '0702 Motor', 'in-use', 'motor', 1, 3)",
+  );
+
+  migrateToBuildsModel(db);
+
+  // both stock rows survive; the child folds into the first
+  assertEquals(
+    db.query<[number, number]>("SELECT id, quantity FROM parts ORDER BY id"),
+    [[1, 3], [2, 3]],
+  );
+  assertEquals(listBuildComponents(db, 3).length, 1);
+});
+
+Deno.test("migration promotes children of non-craft parents instead of inventing build ids", () => {
+  const db = legacyDb();
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (1, 'LionBee', 'in-use', 'craft', 1, NULL)",
+  );
+  // an ordinary part with a child (e.g. an accessory recorded under an FC)
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (2, 'F4 AIO Stack', 'unused', 'fc', 1, NULL)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (3, 'Spare Vista', 'in-use', 'vtx', 1, 2)",
+  );
+
+  migrateToBuildsModel(db);
+
+  // no allocation rows pointing at a build that was never created
+  assertEquals(db.query("SELECT * FROM build_parts").length, 0);
+  // both ordinary parts survive as top-level stock
+  assertEquals(
+    db.query<[number]>("SELECT id FROM parts ORDER BY id"),
+    [[2], [3]],
+  );
+});
+
+Deno.test("migration keeps an installed child's history on the surviving stock part", () => {
+  const db = legacyDb();
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (1, '0702 Motor', 'unused', 'motor', 4, NULL)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (2, 'LionBee', 'in-use', 'craft', 1, NULL)",
+  );
+  db.query(
+    "INSERT INTO parts (id, name, status, type, quantity, parent_id) VALUES (3, '0702 Motor', 'in-use', 'motor', 2, 2)",
+  );
+  db.query(
+    "INSERT INTO part_history (part_id, action, to_parent_id, notes) VALUES (3, 'moved', 2, 'initial install')",
+  );
+  db.query(
+    "INSERT INTO part_history (part_id, action, old_status, new_status) VALUES (3, 'updated', 'unused', 'in-use')",
+  );
+
+  migrateToBuildsModel(db);
+
+  // the child's history is reassigned to the stock part, not deleted
+  const history = getPartHistory(db, 1);
+  assertEquals(history.length, 2);
+  assertEquals(history[0].action, "moved");
+  assertEquals(history[0].to_build_id, 2);
+  assertEquals(history[0].notes, "initial install");
+  assertEquals(history[1].action, "updated");
 });
