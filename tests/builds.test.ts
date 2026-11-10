@@ -1,8 +1,11 @@
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
 import {
+  addBuildComponent,
   type BuildComponent,
   createBuild,
+  createPart,
+  freeQuantity,
   getBuild,
   getPartHistory,
   initDb,
@@ -10,6 +13,7 @@ import {
   listBuilds,
   listParts,
   migrateToBuildsModel,
+  removeBuildComponent,
 } from "../db.ts";
 
 // ─── Build entities (#83) ─────────────────────────────────────────────────────
@@ -408,4 +412,62 @@ Deno.test("migration keeps an installed child's history on the surviving stock p
   assertEquals(history[0].to_build_id, 2);
   assertEquals(history[0].notes, "initial install");
   assertEquals(history[1].action, "updated");
+});
+
+// ─── Allocation safety ────────────────────────────────────────────────────────
+
+Deno.test("addBuildComponent rejects quantities beyond free stock", () => {
+  const db = initDb(":memory:");
+  const partId = createPart(db, { name: "0702 Motor", quantity: 4, status: "unused" });
+  const b1 = createBuild(db, { name: "LionBee" });
+  const b2 = createBuild(db, { name: "Air65III" });
+
+  addBuildComponent(db, b1, partId, 4);
+  assertThrows(
+    () => addBuildComponent(db, b2, partId, 1),
+    Error,
+    "Not enough free stock",
+  );
+});
+
+Deno.test("addBuildComponent counts prior allocations across all builds", () => {
+  const db = initDb(":memory:");
+  const partId = createPart(db, { name: "0702 Motor", quantity: 5, status: "unused" });
+  const b1 = createBuild(db, { name: "LionBee" });
+  const b2 = createBuild(db, { name: "Air65III" });
+
+  addBuildComponent(db, b1, partId, 3);
+  addBuildComponent(db, b2, partId, 2);
+  assertEquals(freeQuantity(db, partId), 0);
+  assertThrows(() => addBuildComponent(db, b2, partId, 1));
+});
+
+Deno.test("listBuildComponents exposes the build_parts row id", () => {
+  const db = initDb(":memory:");
+  const partId = createPart(db, { name: "0702 Motor", quantity: 4, status: "unused" });
+  const buildId = createBuild(db, { name: "LionBee" });
+  addBuildComponent(db, buildId, partId, 2, "front");
+
+  const components = listBuildComponents(db, buildId);
+  assertEquals(components.length, 1);
+  assertEquals(typeof components[0].id, "number");
+});
+
+Deno.test("removeBuildComponent removes only the targeted row when a build has two rows for one part", () => {
+  const db = initDb(":memory:");
+  const partId = createPart(db, { name: "0702 Motor", quantity: 6, status: "unused" });
+  const buildId = createBuild(db, { name: "LionBee" });
+  addBuildComponent(db, buildId, partId, 2, "front");
+  addBuildComponent(db, buildId, partId, 2, "rear");
+
+  const components = listBuildComponents(db, buildId);
+  assertEquals(components.length, 2);
+  const keep = components.find((c) => c.role === "rear")!;
+
+  removeBuildComponent(db, buildId, components.find((c) => c.role === "front")!.id);
+
+  const after = listBuildComponents(db, buildId);
+  assertEquals(after.length, 1);
+  assertEquals(after[0].id, keep.id);
+  assertEquals(after[0].quantity, 2);
 });
