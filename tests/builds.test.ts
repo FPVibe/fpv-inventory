@@ -14,6 +14,7 @@ import {
   listParts,
   migrateToBuildsModel,
   removeBuildComponent,
+  updateBuild,
 } from "../db.ts";
 
 // ─── Build entities (#83) ─────────────────────────────────────────────────────
@@ -470,4 +471,36 @@ Deno.test("removeBuildComponent removes only the targeted row when a build has t
   assertEquals(after.length, 1);
   assertEquals(after[0].id, keep.id);
   assertEquals(after[0].quantity, 2);
+});
+
+// ─── Build updates (#85 review) ───────────────────────────────────────────────
+
+Deno.test("updateBuild changes fields and records an updated history entry", () => {
+  const db = initDb(":memory:");
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  updateBuild(db, buildId, { status: "broken", notes: "frame arm cracked" });
+
+  const build = getBuild(db, buildId)!;
+  assertEquals(build.status, "broken");
+  assertEquals(build.notes, "frame arm cracked");
+  const history = getBuildHistory(db, buildId);
+  const last = history[history.length - 1];
+  assertEquals(last.action, "updated");
+  assertEquals(last.old_status, "in-use");
+  assertEquals(last.new_status, "broken");
+});
+
+Deno.test("updateBuild stores a photo path", () => {
+  const db = initDb(":memory:");
+  const buildId = createBuild(db, { name: "LionBee" });
+
+  updateBuild(db, buildId, { photo_path: "1-1234.jpg" });
+
+  assertEquals(getBuild(db, buildId)!.photo_path, "1-1234.jpg");
+});
+
+Deno.test("updateBuild throws for a missing build", () => {
+  const db = initDb(":memory:");
+  assertThrows(() => updateBuild(db, 99, { status: "broken" }), Error, "not found");
 });

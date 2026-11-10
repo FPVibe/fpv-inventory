@@ -3,6 +3,8 @@ import {
   addBuildComponent,
   createBuild,
   createPart,
+  getBuild,
+  getBuildHistory,
   initDb,
   listBuildComponents,
   listParts,
@@ -264,4 +266,86 @@ Deno.test("GET /unknown returns 404", async () => {
   const { handler } = makeApp();
   const res = await handler(new Request("http://localhost/unknown"));
   assertEquals(res.status, 404);
+});
+
+// ─── Build edit, update and photo actions (#85 review) ───────────────────────
+
+Deno.test("GET /builds/:id links to the edit and photo views", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}`));
+  const html = await res.text();
+
+  assertStringIncludes(html, `/builds/${buildId}/edit`);
+  assertStringIncludes(html, `/builds/${buildId}/photo`);
+});
+
+Deno.test("GET /builds/:id/edit renders a form that posts to /builds/:id/update", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, {
+    name: "LionBee",
+    status: "in-use",
+    class: "whoop",
+    notes: "mushy",
+  });
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}/edit`));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+
+  assertStringIncludes(html, `action="/builds/${buildId}/update"`);
+  assertStringIncludes(html, 'name="status"');
+  assertStringIncludes(html, 'name="class"');
+  assertStringIncludes(html, 'name="notes"');
+  assertStringIncludes(html, 'name="specs"');
+  assertStringIncludes(html, "whoop");
+});
+
+Deno.test("POST /builds/:id/update changes status and records build history", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const form = new FormData();
+  form.set("status", "broken");
+  form.set("class", "whoop");
+  form.set("notes", "frame arm cracked");
+
+  const res = await handler(
+    new Request(`http://localhost/builds/${buildId}/update`, { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 303);
+
+  const build = getBuild(db, buildId);
+  assertEquals(build!.status, "broken");
+  assertEquals(build!.class, "whoop");
+  assertEquals(build!.notes, "frame arm cracked");
+
+  const history = getBuildHistory(db, buildId);
+  const last = history[history.length - 1];
+  assertEquals(last.action, "updated");
+  assertEquals(last.old_status, "in-use");
+  assertEquals(last.new_status, "broken");
+});
+
+Deno.test("POST /builds/:id/update 404s for a non-build id", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Motor", quantity: 1, status: "unused" });
+  const form = new FormData();
+  form.set("status", "broken");
+  const res = await handler(
+    new Request("http://localhost/builds/1/update", { method: "POST", body: form }),
+  );
+  assertEquals(res.status, 404);
+});
+
+Deno.test("GET /builds/:id/photo renders the upload form", async () => {
+  const { db, handler } = makeApp();
+  const buildId = createBuild(db, { name: "LionBee", status: "in-use" });
+
+  const res = await handler(new Request(`http://localhost/builds/${buildId}/photo`));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  assertStringIncludes(html, `action="/builds/${buildId}/photo"`);
+  assertStringIncludes(html, 'type="file"');
 });
