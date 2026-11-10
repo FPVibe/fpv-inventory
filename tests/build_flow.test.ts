@@ -430,7 +430,10 @@ Deno.test("POST /builds/:id/components/add is atomic — one bad selection leave
   form.set(`qty_${fcId}`, "5"); // over free stock
 
   const res = await handler(
-    new Request(`http://localhost/builds/${buildId}/components/add`, { method: "POST", body: form }),
+    new Request(`http://localhost/builds/${buildId}/components/add`, {
+      method: "POST",
+      body: form,
+    }),
   );
   assertEquals(res.status, 500);
   // nothing was installed — the earlier valid selection rolled back too

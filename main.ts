@@ -4,6 +4,7 @@ import {
   assembleBuild,
   createBuild,
   createPart,
+  freeQuantity,
   getBuild,
   getBuildHistory,
   getPart,
@@ -516,6 +517,15 @@ function historyDescription(entry: ReturnType<typeof getPartHistory>[0]): string
       return `Removed from build #${entry.from_build_id}${
         entry.notes ? ` — ${escape(entry.notes)}` : ""
       }`;
+    case "moved":
+      // Legacy (pre-builds-model) entries: v1 moved stock between assemblies.
+      return entry.to_build_id != null
+        ? `Moved from ${
+          entry.from_build_id != null ? `build #${entry.from_build_id}` : "spare parts"
+        } to build #${entry.to_build_id}${entry.notes ? ` — ${escape(entry.notes)}` : ""}`
+        : `Removed from build #${entry.from_build_id}${
+          entry.notes ? ` — ${escape(entry.notes)}` : ""
+        }`;
     default:
       return escape(entry.action);
   }
@@ -809,17 +819,19 @@ async function buildDetailPage(db: DB, id: number): Promise<string | null> {
 async function buildAddComponentPage(db: DB, id: number): Promise<string | null> {
   const build = getBuild(db, id);
   if (!build) return null;
-  const candidates = listParts(db).filter((p) => p.quantity > 0);
+  const candidates = listParts(db)
+    .map((p) => ({ part: p, free: freeQuantity(db, p.id) }))
+    .filter(({ free }) => free > 0);
   const rows = candidates.length > 0
-    ? candidates.map((p) => `
+    ? candidates.map(({ part: p, free }) => `
         <tr>
           <td style="padding:8px 6px">
             <a href="/parts/${p.id}">${escape(p.name)}</a>
             ${p.type ? typeBadge(p.type) : ""}
           </td>
-          <td style="padding:8px 6px;text-align:center;color:#8b949e">${p.quantity}</td>
+          <td style="padding:8px 6px;text-align:center;color:#8b949e">${free}</td>
           <td style="padding:8px 6px;text-align:center">
-            <input type="number" name="qty_${p.id}" min="0" max="${p.quantity}" value="0"
+            <input type="number" name="qty_${p.id}" min="0" max="${free}" value="0"
               style="width:70px;text-align:center"
               aria-label="Quantity of ${escape(p.name)} to install">
           </td>
@@ -959,7 +971,7 @@ async function partInstallPage(db: DB, id: number): Promise<string | null> {
         </div>
         <div class="field">
           <label>Quantity</label>
-          <input name="quantity" type="number" min="1" max="${part.quantity}" value="1"
+          <input name="quantity" type="number" min="1" max="${freeQuantity(db, part.id)}" value="1"
             style="max-width:120px">
         </div>
         <div class="field">
@@ -1012,8 +1024,10 @@ async function partPhotoPage(db: DB, id: number): Promise<string | null> {
 }
 
 function buildsNewPage(db: DB, error?: string): string {
-  // Show top-level non-craft parts with quantity > 0 as candidates
-  const parts = listParts(db).filter((p) => p.quantity > 0);
+  // Offer only parts with unallocated stock, capped at their free quantity.
+  const parts = listParts(db)
+    .map((p) => ({ part: p, free: freeQuantity(db, p.id) }))
+    .filter(({ free }) => free > 0);
 
   const errorHtml = error
     ? `<div style="background:#3d1515;border:1px solid #b91c1c;border-radius:6px;padding:10px 14px;margin-bottom:12px;color:#fca5a5;font-size:.875rem">${
@@ -1022,19 +1036,19 @@ function buildsNewPage(db: DB, error?: string): string {
     : "";
 
   const partRows = parts.length > 0
-    ? parts.map((p) => `
+    ? parts.map(({ part: p, free }) => `
         <tr>
           <td style="padding:8px 6px">
             <a href="/parts/${p.id}">${escape(p.name)}</a>
             ${p.type ? typeBadge(p.type) : ""}
           </td>
-          <td style="padding:8px 6px;text-align:center;color:#8b949e">${p.quantity}</td>
+          <td style="padding:8px 6px;text-align:center;color:#8b949e">${free}</td>
           <td style="padding:8px 6px;text-align:center">
             <input
               type="number"
               name="qty_${p.id}"
               min="0"
-              max="${p.quantity}"
+              max="${free}"
               value="0"
               style="width:70px;text-align:center"
               aria-label="Quantity of ${escape(p.name)} to install"
@@ -1234,22 +1248,27 @@ export function makeHandler(db: DB) {
     if (buildAddComponentPost && req.method === "POST") {
       const id = parseInt(buildAddComponentPost[1], 10);
       const form = await req.formData();
-      let added = 0;
+      const selections: { partId: number; qty: number }[] = [];
       for (const [key, value] of form.entries()) {
         const m = key.match(/^qty_(\d+)$/);
         if (!m) continue;
         const qty = parseInt(value.toString(), 10);
         if (!qty || qty < 1) continue;
-        try {
-          addBuildComponent(db, id, parseInt(m[1], 10), qty);
-          added++;
-        } catch (err) {
-          console.error("Failed to add component:", err);
-          return new Response("Failed to add component", { status: 500 });
-        }
+        selections.push({ partId: parseInt(m[1], 10), qty });
       }
-      if (added === 0) {
+      if (selections.length === 0) {
         return new Response("No quantities given", { status: 400 });
+      }
+      try {
+        // One transaction — a bad selection must not leave a partial BOM.
+        db.transaction(() => {
+          for (const sel of selections) {
+            addBuildComponent(db, id, sel.partId, sel.qty);
+          }
+        });
+      } catch (err) {
+        console.error("Failed to add component:", err);
+        return new Response("Failed to add component", { status: 500 });
       }
       return new Response(null, { status: 303, headers: { Location: `/builds/${id}` } });
     }
