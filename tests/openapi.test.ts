@@ -6,25 +6,34 @@ import openapiSpec from "../openapi.json" with { type: "json" };
 // less. This is the guard that stops the drift the issue was filed about.
 
 Deno.test("every registered route is documented in openapi.json", () => {
-  const specPaths = Object.keys(openapiSpec.paths).sort();
-  const routePaths = API_ROUTES.map((r) => r.specPath).sort();
-  assertEquals(routePaths, specPaths);
+  const specOps = Object.entries(openapiSpec.paths).flatMap(
+    ([path, ops]) =>
+      Object.keys(ops as Record<string, unknown>)
+        .filter((method) => method !== "parameters")
+        .map((method) => `${method.toUpperCase()} ${path}`),
+  ).sort();
+  const routeOps = API_ROUTES.map((r) => `${r.method} ${r.specPath}`).sort();
+  assertEquals(routeOps, specOps);
 });
 
-Deno.test("every documented path is served by a registered route", () => {
-  const specPaths = new Set(Object.keys(openapiSpec.paths));
-  for (const route of API_ROUTES) {
-    assertEquals(
-      specPaths.has(route.specPath),
-      true,
-      `route ${route.specPath} is served but not documented`,
-    );
+Deno.test("every documented operation is served by a registered route", () => {
+  const routeOps = new Set(API_ROUTES.map((r) => `${r.method} ${r.specPath}`));
+  for (const [path, ops] of Object.entries(openapiSpec.paths)) {
+    for (const method of Object.keys(ops as Record<string, unknown>)) {
+      if (method === "parameters") continue;
+      const op = `${method.toUpperCase()} ${path}`;
+      assertEquals(
+        routeOps.has(op),
+        true,
+        `operation ${op} is documented but not served`,
+      );
+    }
   }
 });
 
-Deno.test("no duplicate route paths", () => {
-  const paths = API_ROUTES.map((r) => r.specPath);
-  assertEquals(paths.length, new Set(paths).size);
+Deno.test("no duplicate route operations", () => {
+  const ops = API_ROUTES.map((r) => `${r.method} ${r.specPath}`);
+  assertEquals(ops.length, new Set(ops).size);
 });
 
 Deno.test("no duplicate operationIds in the spec", () => {

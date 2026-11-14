@@ -4,6 +4,7 @@ import {
   assembleBuild,
   createBuild,
   createPart,
+  deletePart,
   freeQuantity,
   getBuild,
   getBuildHistory,
@@ -684,6 +685,10 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <a href="/parts/${id}/edit" class="btn btn-primary btn-sm">Edit</a>
           <a href="/parts/${id}/install" class="btn btn-sm">Install in a build</a>
           <a href="/parts/${id}/photo" class="btn btn-sm">Change photo</a>
+          <form method="POST" action="/parts/${id}/delete" style="margin-left:8px"
+            onsubmit="return confirm('Delete this part? This cannot be undone.')">
+            <button type="submit" class="btn btn-sm" style="color:#f85149">Delete</button>
+          </form>
         </div>
       </div>
 
@@ -1331,6 +1336,19 @@ export function makeHandler(db: DB) {
       const page = await partDetailPage(db, id);
       if (!page) return new Response("Not Found", { status: 404 });
       return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // POST /parts/:id/delete
+    const deleteMatch = path.match(/^\/parts\/(\d+)\/delete$/);
+    if (deleteMatch && req.method === "POST") {
+      const id = parseInt(deleteMatch[1], 10);
+      if (!getPart(db, id)) return new Response("Not Found", { status: 404 });
+      try {
+        deletePart(db, id);
+      } catch (err) {
+        return new Response((err as Error).message, { status: 400 });
+      }
+      return new Response(null, { status: 303, headers: { Location: "/" } });
     }
 
     // GET /parts/:id/edit

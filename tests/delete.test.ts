@@ -1,7 +1,6 @@
 import {
   assertEquals,
   assertFalse,
-  assertRejects,
   assertStringIncludes,
   assertThrows,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
@@ -10,11 +9,11 @@ import {
   addBuildComponent,
   createBuild,
   createPart,
+  deletePart,
   getPart,
   getPartHistory,
   initDb,
   listParts,
-  deletePart,
 } from "../db.ts";
 
 function makeApp() {
