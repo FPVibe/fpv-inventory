@@ -1251,7 +1251,17 @@ export function makeHandler(db: DB) {
       const origin = req.headers.get("origin");
       if (origin) {
         try {
-          if (origin === "null" || new URL(origin).host !== new URL(req.url).host) {
+          // Scheme-aware: the browser sees the proxy's scheme, the server sees
+          // its own — X-Forwarded-Proto (set by the Runtipi/reverse proxy)
+          // supplies the client-visible scheme when present.
+          const xfp = (req.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim();
+          const effectiveScheme = xfp || new URL(req.url).protocol.replace(":", "");
+          const o = new URL(origin);
+          if (
+            origin === "null" ||
+            o.protocol.replace(":", "") !== effectiveScheme ||
+            o.host !== new URL(req.url).host
+          ) {
             return new Response("Forbidden", { status: 403 });
           }
         } catch {
