@@ -277,8 +277,8 @@ function fullAddForm(): string {
           <input name="quantity" type="number" value="1" min="1" style="max-width:120px">
         </div>
         <div class="field">
-          <label>Location</label>
-          <input name="location" placeholder="e.g. Drawer 2, small parts bin">
+          <label for="new-location">Location</label>
+          <input id="new-location" name="location" placeholder="e.g. Drawer 2, small parts bin">
         </div>
         <div class="field">
           <label>Notes</label>
@@ -333,12 +333,12 @@ function quickAddForm(): string {
         <input name="quantity" type="number" value="1" min="1" style="max-width:80px">
       </div>
       <div class="field">
-        <label>Location</label>
-        <input name="location" placeholder="e.g. Drawer 2">
+        <label for="qa-location">Location</label>
+        <input id="qa-location" name="location" placeholder="e.g. Drawer 2">
       </div>
       <div class="field">
-        <label>Type</label>
-        <select name="type">
+        <label for="qa-type">Type</label>
+        <select id="qa-type" name="type">
           <option value="">—</option>
           ${ALL_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
         </select>
@@ -942,8 +942,8 @@ async function partEditPage(db: DB, id: number): Promise<string | null> {
           <input name="quantity" type="number" min="0" value="${escape(part.quantity)}">
         </div>
         <div class="field">
-          <label>Location</label>
-          <input name="location" value="${
+          <label for="edit-location">Location</label>
+          <input id="edit-location" name="location" value="${
       escape(part.location ?? "")
     }" placeholder="e.g. Drawer 2, small parts bin">
         </div>

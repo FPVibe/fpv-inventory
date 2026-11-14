@@ -532,7 +532,7 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
     conditions.push("status = ?");
     params.push(filter.status);
   }
-  if (filter.location !== undefined) {
+  if (filter.location !== undefined && filter.location !== "") {
     conditions.push("instr(lower(location), lower(?)) > 0");
     params.push(filter.location);
   }

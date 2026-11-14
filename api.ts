@@ -112,7 +112,7 @@ export const API_ROUTES: readonly Route[] = [
         filter.status = status;
       }
       if (q !== null) filter.q = q;
-      if (location !== null) filter.location = location;
+      if (location) filter.location = location;
 
       return json(listParts(db, filter));
     },

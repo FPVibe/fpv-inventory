@@ -203,7 +203,6 @@ Deno.test("listParts with an empty location filter returns all parts", () => {
   db.close();
 });
 
-
 Deno.test("GET /api/parts?location= filters and returns the location", async () => {
   const { db, handler } = makeApp();
   createPart(db, { name: "Cinder Motor", quantity: 2, status: "unused", location: "Drawer Two" });
