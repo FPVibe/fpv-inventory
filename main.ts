@@ -277,6 +277,10 @@ function fullAddForm(): string {
           <input name="quantity" type="number" value="1" min="1" style="max-width:120px">
         </div>
         <div class="field">
+          <label for="new-location">Location</label>
+          <input id="new-location" name="location" placeholder="e.g. Drawer 2, small parts bin">
+        </div>
+        <div class="field">
           <label>Notes</label>
           <textarea name="notes" rows="3" placeholder="e.g. burned in, running on 4S only"></textarea>
         </div>
@@ -329,8 +333,12 @@ function quickAddForm(): string {
         <input name="quantity" type="number" value="1" min="1" style="max-width:80px">
       </div>
       <div class="field">
-        <label>Type</label>
-        <select name="type">
+        <label for="qa-location">Location</label>
+        <input id="qa-location" name="location" placeholder="e.g. Drawer 2">
+      </div>
+      <div class="field">
+        <label for="qa-type">Type</label>
+        <select id="qa-type" name="type">
           <option value="">—</option>
           ${ALL_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
         </select>
@@ -459,13 +467,21 @@ function summaryCard(db: DB): string {
 </div>`;
 }
 
-function homePage(db: DB, typeFilter?: PartType, query?: string): string {
-  const parts = listParts(db, { type: typeFilter, q: query });
+function homePage(
+  db: DB,
+  typeFilter?: PartType,
+  query?: string,
+  locationFilter?: string,
+): string {
+  const parts = listParts(db, { type: typeFilter, location: locationFilter, q: query });
   const searching = query != null && query.length > 0;
+  const locationFiltering = locationFilter != null && locationFilter.length > 0;
   const rows = parts.length > 0
     ? parts.map(partRow).join("")
     : searching
     ? `<p class="empty">No parts match &ldquo;${escape(query)}&rdquo;.</p>`
+    : locationFiltering
+    ? `<p class="empty">No parts in that location.</p>`
     : `<p class="empty">No parts yet — add something above.</p>`;
 
   const filterBar = `
@@ -473,11 +489,14 @@ function homePage(db: DB, typeFilter?: PartType, query?: string): string {
   <input type="search" name="q" value="${
     escape(query ?? "")
   }" placeholder="Search parts…" aria-label="Search parts" style="width:auto;min-width:180px">
+  <input type="search" name="location" value="${
+    escape(locationFilter ?? "")
+  }" placeholder="Location…" aria-label="Filter by location" style="width:auto;min-width:140px">
   <select name="type" onchange="this.form.submit()" style="width:auto">
     ${typeOptions(typeFilter ?? null)}
   </select>
   <button type="submit" class="btn btn-sm">Search</button>
-  ${typeFilter || searching ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
+  ${typeFilter || searching || locationFiltering ? `<a href="/" class="btn btn-sm">Clear</a>` : ""}
 </form>`;
 
   return layout(
@@ -607,6 +626,13 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           ${escape(part.quantity)}
           <span style="color:#8b949e">total owned</span>
         </div>
+        ${
+      part.location
+        ? `<div class="detail-field"><span class="label">Location</span>${
+          escape(part.location)
+        }</div>`
+        : ""
+    }
         ${
       part.notes
         ? `<div class="detail-field"><span class="label">Notes</span>${escape(part.notes)}</div>`
@@ -916,6 +942,12 @@ async function partEditPage(db: DB, id: number): Promise<string | null> {
           <input name="quantity" type="number" min="0" value="${escape(part.quantity)}">
         </div>
         <div class="field">
+          <label for="edit-location">Location</label>
+          <input id="edit-location" name="location" value="${
+      escape(part.location ?? "")
+    }" placeholder="e.g. Drawer 2, small parts bin">
+        </div>
+        <div class="field">
           <label>Notes</label>
           <textarea name="notes" rows="2">${escape(part.notes ?? "")}</textarea>
         </div>
@@ -1213,7 +1245,9 @@ export function makeHandler(db: DB) {
       const type = typeParam ? (typeParam as PartType) : undefined;
       const qParam = url.searchParams.get("q");
       const q = qParam ? qParam : undefined;
-      return new Response(homePage(db, type, q), {
+      const locationParam = url.searchParams.get("location");
+      const location = locationParam ? locationParam : undefined;
+      return new Response(homePage(db, type, q, location), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
@@ -1230,8 +1264,9 @@ export function makeHandler(db: DB) {
       const typeStr = form.get("type")?.toString() || undefined;
       const type = typeStr ? typeStr as PartType : undefined;
       const notes = form.get("notes")?.toString().trim() || undefined;
+      const location = form.get("location")?.toString().trim() || undefined;
       try {
-        createPart(db, { name, quantity, status, type, notes });
+        createPart(db, { name, quantity, status, type, notes, location });
       } catch (err) {
         console.error("Failed to create part:", err);
         return new Response("Failed to create part", { status: 500 });
@@ -1260,6 +1295,7 @@ export function makeHandler(db: DB) {
       const type = typeStr ? typeStr as PartType : undefined;
       const notes = form.get("notes")?.toString().trim() || undefined;
       const specs = form.get("specs")?.toString().trim() || undefined;
+      const location = form.get("location")?.toString().trim() || undefined;
       const serial_number = form.get("serial_number")?.toString().trim() || null;
       const warranty_expiry = form.get("warranty_expiry")?.toString() || null;
       const purchase_date = form.get("purchase_date")?.toString() || null;
@@ -1275,6 +1311,7 @@ export function makeHandler(db: DB) {
           type,
           notes,
           specs,
+          location,
           serial_number,
           warranty_expiry,
           purchase_date,
@@ -1468,12 +1505,14 @@ export function makeHandler(db: DB) {
         type?: PartType | null;
         notes?: string;
         specs?: string;
+        location?: string;
       } = {};
       if (form.has("type")) {
         formFields.type = (form.get("type")!.toString() || null) as PartType | null;
       }
       if (form.has("notes")) formFields.notes = form.get("notes")!.toString();
       if (form.has("specs")) formFields.specs = form.get("specs")!.toString();
+      if (form.has("location")) formFields.location = form.get("location")!.toString();
       // Gear / procurement fields — only include in update when present in the form
       // to avoid clearing values on old form submissions that lack these fields.
       const gearFields: {

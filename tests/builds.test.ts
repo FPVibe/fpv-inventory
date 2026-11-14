@@ -83,6 +83,10 @@ Deno.test("listBuildComponents returns an empty array for a build with no compon
 /**
  * Builds a database in the pre-v2 shape: builds are parts with type='craft',
  * and their components are child part rows pointing at them via parent_id.
+ *
+ * runMigrations applies its additive column migrations (specs, location, …)
+ * to a legacy database BEFORE calling migrateToBuildsModel, so the fixture
+ * includes every column runMigrations adds.
  */
 function legacyDb(): DB {
   const db = new DB(":memory:");
@@ -94,6 +98,7 @@ function legacyDb(): DB {
       type TEXT,
       notes TEXT,
       specs TEXT,
+      location TEXT,
       quantity INTEGER NOT NULL DEFAULT 1,
       parent_id INTEGER REFERENCES parts(id),
       photo_path TEXT,

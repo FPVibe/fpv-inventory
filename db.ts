@@ -20,6 +20,7 @@ export interface Part {
   type: PartType | null;
   notes: string | null;
   specs: string | null;
+  location: string | null;
   quantity: number;
   photo_path: string | null;
   serial_number: string | null;
@@ -90,6 +91,7 @@ export interface CreatePartInput {
   type?: PartType | null;
   notes?: string;
   specs?: string;
+  location?: string | null;
   parent_id?: number | null;
   serial_number?: string | null;
   warranty_expiry?: string | null;
@@ -103,6 +105,7 @@ export interface UpdatePartInput {
   type?: PartType | null;
   notes?: string;
   specs?: string;
+  location?: string;
   quantity?: number;
   photo_path?: string;
   serial_number?: string | null;
@@ -133,6 +136,9 @@ export function runMigrations(db: DB): void {
   }
   if (!columns.includes("purchase_price")) {
     db.execute("ALTER TABLE parts ADD COLUMN purchase_price REAL");
+  }
+  if (!columns.includes("location")) {
+    db.execute("ALTER TABLE parts ADD COLUMN location TEXT");
   }
 
   migrateToBuildsModel(db);
@@ -340,6 +346,7 @@ export function initDb(path: string): DB {
       type TEXT,
       notes TEXT,
       specs TEXT,
+      location TEXT,
       quantity INTEGER NOT NULL DEFAULT 1,
       photo_path TEXT,
       serial_number TEXT,
@@ -401,8 +408,8 @@ export function initDb(path: string): DB {
 
 export function createPart(db: DB, input: CreatePartInput): number {
   db.query(
-    `INSERT INTO parts (name, quantity, status, type, notes, specs, serial_number, warranty_expiry, purchase_date, purchase_price)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO parts (name, quantity, status, type, notes, specs, location, serial_number, warranty_expiry, purchase_date, purchase_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.quantity,
@@ -410,6 +417,7 @@ export function createPart(db: DB, input: CreatePartInput): number {
       input.type ?? null,
       input.notes ?? null,
       input.specs ?? null,
+      input.location?.trim() || null,
       input.serial_number ?? null,
       input.warranty_expiry ?? null,
       input.purchase_date ?? null,
@@ -433,6 +441,7 @@ export function getPart(db: DB, id: number): Part | null {
       string | null,
       string | null,
       string | null,
+      string | null,
       number,
       string | null,
       string | null,
@@ -443,7 +452,7 @@ export function getPart(db: DB, id: number): Part | null {
       string,
     ]
   >(
-    `SELECT id, name, status, type, notes, specs, quantity, photo_path, serial_number, warranty_expiry, purchase_date, purchase_price, created_at, updated_at
+    `SELECT id, name, status, type, notes, specs, location, quantity, photo_path, serial_number, warranty_expiry, purchase_date, purchase_price, created_at, updated_at
      FROM parts WHERE id = ?`,
     [id],
   );
@@ -455,6 +464,7 @@ export function getPart(db: DB, id: number): Part | null {
     type,
     notes,
     specs,
+    location,
     quantity,
     photo_path,
     serial_number,
@@ -471,6 +481,7 @@ export function getPart(db: DB, id: number): Part | null {
     type: type as PartType | null,
     notes,
     specs,
+    location,
     quantity,
     photo_path,
     serial_number,
@@ -485,6 +496,7 @@ export function getPart(db: DB, id: number): Part | null {
 export interface PartFilter {
   type?: PartType;
   status?: PartStatus;
+  location?: string;
   q?: string;
 }
 
@@ -493,6 +505,7 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
     number,
     string,
     string,
+    string | null,
     string | null,
     string | null,
     string | null,
@@ -506,7 +519,7 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
     string,
   ];
   const select =
-    `SELECT id, name, status, type, notes, specs, quantity, photo_path, serial_number, warranty_expiry, purchase_date, purchase_price, created_at, updated_at FROM parts`;
+    `SELECT id, name, status, type, notes, specs, location, quantity, photo_path, serial_number, warranty_expiry, purchase_date, purchase_price, created_at, updated_at FROM parts`;
 
   const conditions: string[] = [];
   const params: QueryParameter[] = [];
@@ -518,6 +531,10 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
   if (filter.status !== undefined) {
     conditions.push("status = ?");
     params.push(filter.status);
+  }
+  if (filter.location !== undefined && filter.location !== "") {
+    conditions.push("instr(lower(location), lower(?)) > 0");
+    params.push(filter.location);
   }
   if (filter.q !== undefined) {
     conditions.push("instr(lower(name), lower(?)) > 0");
@@ -535,6 +552,7 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
       partType,
       notes,
       specs,
+      location,
       quantity,
       photo_path,
       serial_number,
@@ -551,6 +569,7 @@ export function listParts(db: DB, filter: PartFilter = {}): Part[] {
     type: partType as PartType | null,
     notes,
     specs,
+    location,
     quantity,
     photo_path,
     serial_number,
@@ -585,6 +604,7 @@ export function updatePart(db: DB, id: number, input: UpdatePartInput): void {
   const specs = "specs" in input
     ? (input.specs?.replace(/\r\n/g, "\n").trim() || null)
     : current.specs;
+  const location = "location" in input ? (input.location?.trim() || null) : current.location;
   const quantity = input.quantity ?? current.quantity;
   const photo_path = "photo_path" in input ? (input.photo_path ?? null) : current.photo_path;
   const serial_number = "serial_number" in input
@@ -601,7 +621,7 @@ export function updatePart(db: DB, id: number, input: UpdatePartInput): void {
     : current.purchase_price;
 
   db.query(
-    `UPDATE parts SET name=?, status=?, type=?, notes=?, specs=?, quantity=?, photo_path=?,
+    `UPDATE parts SET name=?, status=?, type=?, notes=?, specs=?, location=?, quantity=?, photo_path=?,
        serial_number=?, warranty_expiry=?, purchase_date=?, purchase_price=?, updated_at=datetime('now')
      WHERE id=?`,
     [
@@ -610,6 +630,7 @@ export function updatePart(db: DB, id: number, input: UpdatePartInput): void {
       type,
       notes,
       specs,
+      location,
       quantity,
       photo_path,
       serial_number,
