@@ -118,3 +118,29 @@ Deno.test("POST /parts/import with an empty paste creates nothing", async () => 
   assertEquals(res.status, 303);
   assertEquals(listParts(db).length, 0);
 });
+
+// ─── Copilot round-1 regressions (PR #90) ────────────────────────────────────
+
+Deno.test("POST /parts/import errors naming the line when it has more than four columns and creates nothing", async () => {
+  const { db, handler } = makeApp();
+  const text = [
+    "Good Part | 1",
+    "Motor | 4 | motor | Drawer 2 | top shelf",
+  ].join("\n");
+  const res = await handler(importPost(text));
+  assertEquals(res.status, 400);
+  assertStringIncludes(await res.text(), "Line 2");
+  assertEquals(listParts(db).length, 0);
+});
+
+Deno.test("POST /parts/import errors on a quantity outside the safe integer range and creates nothing", async () => {
+  const { db, handler } = makeApp();
+  const text = [
+    "Good Part | 1",
+    "Bad Qty | 9007199254740993",
+  ].join("\n");
+  const res = await handler(importPost(text));
+  assertEquals(res.status, 400);
+  assertStringIncludes(await res.text(), "Line 2");
+  assertEquals(listParts(db).length, 0);
+});
