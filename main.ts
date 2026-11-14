@@ -319,6 +319,31 @@ function fullAddForm(): string {
   );
 }
 
+function bulkImportPage(): string {
+  const title = "Bulk Import";
+  return layout(
+    title,
+    `
+    <div class="breadcrumb"><a href="/">← Back</a></div>
+    <div class="card">
+      <h2>${escape(title)}</h2>
+      <p class="empty" style="padding:0 0 8px">One part per line: <code>name | qty | type | location</code>. Qty, type and location are optional (qty defaults to 1); blank lines are skipped.</p>
+      <form method="POST" action="/parts/import">
+        <div class="field">
+          <label for="import-paste">Parts</label>
+          <textarea id="import-paste" name="paste" rows="12" style="font-family:monospace;font-size:.85rem"
+            placeholder="0702 Motor | 4 | motor | Drawer 2&#10;Walksnail Avatar Mini | 1 | gear"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="submit" class="btn btn-primary">Import Parts</button>
+          <a href="/" class="btn">Cancel</a>
+        </div>
+      </form>
+    </div>
+  `,
+  );
+}
+
 function quickAddForm(): string {
   return `
 <div class="card">
@@ -361,6 +386,10 @@ function quickAddForm(): string {
       <div class="field" style="flex:none">
         <label>&nbsp;</label>
         <a href="/parts/new" class="btn btn-sm" style="white-space:nowrap">Full details…</a>
+      </div>
+      <div class="field" style="flex:none">
+        <label>&nbsp;</label>
+        <a href="/parts/import" class="btn btn-sm" style="white-space:nowrap">Bulk import…</a>
       </div>
     </div>
   </form>
@@ -1303,6 +1332,90 @@ export function makeHandler(db: DB) {
       } catch (err) {
         console.error("Failed to create part:", err);
         return new Response("Failed to create part", { status: 500 });
+      }
+
+      return new Response(null, { status: 303, headers: { Location: "/" } });
+    }
+
+    // GET /parts/import — bulk paste form (#87)
+    if (path === "/parts/import" && req.method === "GET") {
+      return new Response(bulkImportPage(), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // POST /parts/import — one part per line: name | qty | type | location (#87)
+    if (path === "/parts/import" && req.method === "POST") {
+      const form = await req.formData();
+      const paste = form.get("paste")?.toString() ?? "";
+      const lines = paste.split(/\r?\n/).map((l) => l.trim());
+      type Parsed = { name: string; quantity: number; type?: PartType; location?: string };
+      const parsed: Parsed[] = [];
+      for (const [idx, line] of lines.entries()) {
+        if (!line) continue; // blank lines are skipped
+        const lineNo = idx + 1;
+        const cells = line.split("|").map((c) => c.trim());
+        if (cells.length > 4) {
+          return new Response(
+            `Line ${lineNo}: too many fields (${cells.length}) — expected up to 4: name | qty | type | location`,
+            { status: 400 },
+          );
+        }
+        const name = cells[0];
+        if (!name) {
+          return new Response(`Line ${lineNo}: name is required`, { status: 400 });
+        }
+        let quantity = 1;
+        if (cells[1]) {
+          if (!/^\d+$/.test(cells[1])) {
+            return new Response(
+              `Line ${lineNo}: quantity must be a whole number ≥ 1, got "${cells[1]}"`,
+              {
+                status: 400,
+              },
+            );
+          }
+          const q = parseInt(cells[1], 10);
+          if (q < 1 || !Number.isSafeInteger(q)) {
+            return new Response(
+              `Line ${lineNo}: quantity must be ≥ 1, got "${cells[1]}"`,
+              {
+                status: 400,
+              },
+            );
+          }
+          quantity = q;
+        }
+        let type: PartType | undefined;
+        if (cells[2]) {
+          const t = cells[2] as PartType;
+          if (!ALL_TYPES.includes(t)) {
+            return new Response(
+              `Line ${lineNo}: unknown type "${cells[2]}" (valid: ${ALL_TYPES.join(", ")})`,
+              { status: 400 },
+            );
+          }
+          type = t;
+        }
+        const location = cells[3] || undefined;
+        parsed.push({ name, quantity, type, location });
+      }
+
+      try {
+        db.transaction(() => {
+          for (const p of parsed) {
+            createPart(db, {
+              name: p.name,
+              quantity: p.quantity,
+              status: "unused",
+              type: p.type,
+              location: p.location,
+            });
+          }
+        });
+      } catch (err) {
+        console.error("Failed to import parts:", err);
+        return new Response("Failed to import parts", { status: 500 });
       }
 
       return new Response(null, { status: 303, headers: { Location: "/" } });
