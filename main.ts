@@ -1242,6 +1242,24 @@ export function makeHandler(db: DB) {
     const apiRes = handleApi(db, req, url);
     if (apiRes) return apiRes;
 
+    // CSRF guard on form POSTs (#86 Copilot round 1): cross-origin form
+    // submissions carry a foreign or opaque Origin header and are rejected.
+    // Absent Origin (curl, server-to-server) is allowed — this app is
+    // local-only behind Runtipi without auth, and the JSON API's non-simple
+    // methods (DELETE) are already protected by CORS preflight behavior.
+    if (req.method === "POST") {
+      const origin = req.headers.get("origin");
+      if (origin) {
+        try {
+          if (origin === "null" || new URL(origin).host !== new URL(req.url).host) {
+            return new Response("Forbidden", { status: 403 });
+          }
+        } catch {
+          return new Response("Forbidden", { status: 403 });
+        }
+      }
+    }
+
     // GET /
     if (path === "/" && req.method === "GET") {
       // Empty params mean "no filter" — URLSearchParams.get returns "" for ?type=
