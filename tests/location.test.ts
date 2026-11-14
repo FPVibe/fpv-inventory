@@ -179,7 +179,30 @@ Deno.test("GET /?location= holds the current filter value in its input", async (
   assertStringIncludes(html, 'value="Drawer"');
 });
 
-// ─── JSON API (#72) ──────────────────────────────────────────────────────────
+// ─── Copilot round-1 regressions (PR #88) ────────────────────────────────────
+
+Deno.test("GET /api/parts?location= (empty) returns all parts, including unlocated ones", async () => {
+  const { db, handler } = makeApp();
+  createPart(db, { name: "Cinder Motor", quantity: 2, status: "unused", location: "Drawer Two" });
+  createPart(db, { name: "Halcyon Frame", quantity: 1, status: "unused" });
+
+  const res = await handler(new Request("http://localhost/api/parts?location="));
+  assertEquals(res.status, 200);
+  const body = JSON.parse(await res.text());
+  assertEquals(body.map((p: { name: string }) => p.name).sort(), [
+    "Cinder Motor",
+    "Halcyon Frame",
+  ]);
+});
+
+Deno.test("listParts with an empty location filter returns all parts", () => {
+  const db = initDb(":memory:");
+  createPart(db, { name: "A", quantity: 1, status: "unused", location: "Bin 3" });
+  createPart(db, { name: "B", quantity: 1, status: "unused" });
+  assertEquals(listParts(db, { location: "" }).length, 2);
+  db.close();
+});
+
 
 Deno.test("GET /api/parts?location= filters and returns the location", async () => {
   const { db, handler } = makeApp();
