@@ -101,6 +101,7 @@ export const API_ROUTES: readonly Route[] = [
       const type = url.searchParams.get("type");
       const status = url.searchParams.get("status");
       const q = url.searchParams.get("q");
+      const location = url.searchParams.get("location");
 
       if (type !== null) {
         if (!isPartType(type)) return json([]);
@@ -111,6 +112,7 @@ export const API_ROUTES: readonly Route[] = [
         filter.status = status;
       }
       if (q !== null) filter.q = q;
+      if (location !== null) filter.location = location;
 
       return json(listParts(db, filter));
     },

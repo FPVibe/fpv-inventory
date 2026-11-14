@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "fpv-inventory",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "FPV quad parts, builds, and gear inventory API \u2014 part of the FPVibe federation of tools."
   },
   "servers": [
@@ -103,6 +103,14 @@
             "name": "q",
             "in": "query",
             "description": "Case-insensitive substring search on name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "description": "Case-insensitive substring filter on location",
             "schema": {
               "type": "string"
             }
@@ -485,6 +493,13 @@
               "null"
             ],
             "description": "Free-form spec block from product listing"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Physical storage location (free text, e.g. 'Drawer 2 \u2014 small parts')"
           },
           "quantity": {
             "type": "integer",
