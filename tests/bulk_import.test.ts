@@ -84,7 +84,7 @@ Deno.test("POST /parts/import errors naming the line on an unknown type and crea
   ].join("\n");
   const res = await handler(importPost(text));
   assertEquals(res.status, 400);
-  assertStringIncludes(await res.text(), "line 2");
+  assertStringIncludes(await res.text(), "Line 2");
   assertEquals(listParts(db).length, 0);
 });
 
@@ -96,7 +96,7 @@ Deno.test("POST /parts/import errors naming the line on a bad quantity and creat
   ].join("\n");
   const res = await handler(importPost(text));
   assertEquals(res.status, 400);
-  assertStringIncludes(await res.text(), "line 2");
+  assertStringIncludes(await res.text(), "Line 2");
   assertEquals(listParts(db).length, 0);
 });
 
@@ -108,7 +108,7 @@ Deno.test("POST /parts/import errors naming the line on a missing name and creat
   ].join("\n");
   const res = await handler(importPost(text));
   assertEquals(res.status, 400);
-  assertStringIncludes(await res.text(), "line 2");
+  assertStringIncludes(await res.text(), "Line 2");
   assertEquals(listParts(db).length, 0);
 });
 
