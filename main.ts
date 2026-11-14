@@ -1355,6 +1355,12 @@ export function makeHandler(db: DB) {
         if (!line) continue; // blank lines are skipped
         const lineNo = idx + 1;
         const cells = line.split("|").map((c) => c.trim());
+        if (cells.length > 4) {
+          return new Response(
+            `Line ${lineNo}: too many fields (${cells.length}) — expected up to 4: name | qty | type | location`,
+            { status: 400 },
+          );
+        }
         const name = cells[0];
         if (!name) {
           return new Response(`Line ${lineNo}: name is required`, { status: 400 });
@@ -1370,7 +1376,7 @@ export function makeHandler(db: DB) {
             );
           }
           const q = parseInt(cells[1], 10);
-          if (q < 1) {
+          if (q < 1 || !Number.isSafeInteger(q)) {
             return new Response(
               `Line ${lineNo}: quantity must be ≥ 1, got "${cells[1]}"`,
               {
