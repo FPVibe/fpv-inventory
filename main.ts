@@ -4,6 +4,7 @@ import {
   assembleBuild,
   createBuild,
   createPart,
+  deletePart,
   freeQuantity,
   getBuild,
   getBuildHistory,
@@ -684,6 +685,10 @@ async function partDetailPage(db: DB, id: number): Promise<string | null> {
           <a href="/parts/${id}/edit" class="btn btn-primary btn-sm">Edit</a>
           <a href="/parts/${id}/install" class="btn btn-sm">Install in a build</a>
           <a href="/parts/${id}/photo" class="btn btn-sm">Change photo</a>
+          <form method="POST" action="/parts/${id}/delete" style="margin-left:8px"
+            onsubmit="return confirm('Delete this part? This cannot be undone.')">
+            <button type="submit" class="btn btn-sm" style="color:#f85149">Delete</button>
+          </form>
         </div>
       </div>
 
@@ -1237,6 +1242,34 @@ export function makeHandler(db: DB) {
     const apiRes = handleApi(db, req, url);
     if (apiRes) return apiRes;
 
+    // CSRF guard on form POSTs (#86 Copilot round 1): cross-origin form
+    // submissions carry a foreign or opaque Origin header and are rejected.
+    // Absent Origin (curl, server-to-server) is allowed — this app is
+    // local-only behind Runtipi without auth, and the JSON API's non-simple
+    // methods (DELETE) are already protected by CORS preflight behavior.
+    if (req.method === "POST") {
+      const origin = req.headers.get("origin");
+      if (origin) {
+        try {
+          // Scheme-aware: the browser sees the proxy's scheme, the server sees
+          // its own — X-Forwarded-Proto (set by the Runtipi/reverse proxy)
+          // supplies the client-visible scheme when present.
+          const xfp = (req.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim();
+          const effectiveScheme = xfp || new URL(req.url).protocol.replace(":", "");
+          const o = new URL(origin);
+          if (
+            origin === "null" ||
+            o.protocol.replace(":", "") !== effectiveScheme ||
+            o.host !== new URL(req.url).host
+          ) {
+            return new Response("Forbidden", { status: 403 });
+          }
+        } catch {
+          return new Response("Forbidden", { status: 403 });
+        }
+      }
+    }
+
     // GET /
     if (path === "/" && req.method === "GET") {
       // Empty params mean "no filter" — URLSearchParams.get returns "" for ?type=
@@ -1331,6 +1364,19 @@ export function makeHandler(db: DB) {
       const page = await partDetailPage(db, id);
       if (!page) return new Response("Not Found", { status: 404 });
       return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    // POST /parts/:id/delete
+    const deleteMatch = path.match(/^\/parts\/(\d+)\/delete$/);
+    if (deleteMatch && req.method === "POST") {
+      const id = parseInt(deleteMatch[1], 10);
+      if (!getPart(db, id)) return new Response("Not Found", { status: 404 });
+      try {
+        deletePart(db, id);
+      } catch (err) {
+        return new Response((err as Error).message, { status: 400 });
+      }
+      return new Response(null, { status: 303, headers: { Location: "/" } });
     }
 
     // GET /parts/:id/edit

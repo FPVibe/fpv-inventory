@@ -900,6 +900,26 @@ export function removeBuildComponent(db: DB, buildId: number, componentId: numbe
 
 // ─── Part history ────────────────────────────────────────────────────────────
 
+export function deletePart(db: DB, id: number): void {
+  const part = getPart(db, id);
+  if (!part) throw new Error(`Part ${id} not found`);
+  const allocated = db.query<[number]>(
+    "SELECT COUNT(*) FROM build_parts WHERE part_id = ?",
+    [id],
+  )[0]?.[0] ?? 0;
+  if (allocated > 0) {
+    throw new Error(
+      `Cannot delete "${part.name}": allocated to builds (${allocated} allocation row${
+        allocated !== 1 ? "s" : ""
+      }) — remove it from its build(s) first`,
+    );
+  }
+  db.transaction(() => {
+    db.query("DELETE FROM part_history WHERE part_id = ?", [id]);
+    db.query("DELETE FROM parts WHERE id = ?", [id]);
+  });
+}
+
 export function getPartHistory(db: DB, partId: number): HistoryEntry[] {
   const rows = db.query<
     [

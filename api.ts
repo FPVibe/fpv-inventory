@@ -1,6 +1,7 @@
 import {
   type BuildFilter,
   DB,
+  deletePart,
   getBuild,
   getBuildHistory,
   getPart,
@@ -126,6 +127,21 @@ export const API_ROUTES: readonly Route[] = [
       if (!part) return errorResponse("Part not found", 404);
       const history = getPartHistory(db, part.id);
       return json({ ...part, history });
+    },
+  },
+  {
+    method: "DELETE",
+    specPath: "/api/parts/{id}",
+    match: /^\/api\/parts\/(\d+)$/,
+    handler: ({ db, params }) => {
+      const id = parseInt(params[0], 10);
+      if (!getPart(db, id)) return errorResponse("Part not found", 404);
+      try {
+        deletePart(db, id);
+      } catch (err) {
+        return errorResponse((err as Error).message, 409);
+      }
+      return json({ deleted: id });
     },
   },
   {
